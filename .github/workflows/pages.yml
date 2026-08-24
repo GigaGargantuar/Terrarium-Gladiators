@@ -35,7 +35,9 @@ jobs:
       - uses: actions/configure-pages@v6
       - uses: actions/upload-pages-artifact@v5
         with:
-          path: docs
+          # Match GitHub's branch-based Pages layout so competing deployments
+          # cannot alternate between / and /docs as the browser app root.
+          path: .
           include-hidden-files: true
       - name: Deploy to GitHub Pages
         id: deployment
