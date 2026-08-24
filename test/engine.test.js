@@ -38,10 +38,9 @@ test("movement plane rotates knight offsets into XZ", () => {
   assert.ok(moves.every(p => p.y === knight.position.y));
 });
 
-test("a wall-latched pawn captures diagonally upward and downward on YZ", () => {
+test("a pawn captures diagonally upward and downward on YZ without a wall latch", () => {
   const game = new TerrariumModel(false);
   game.solids = new Uint8Array(8 * 8 * 16);
-  game.setSolid(4, 3, 5, true);
   game.pieces = [
     { id:1, side:Side.WHITE, kind:Kind.PAWN, position:{x:3,y:3,z:5}, hasMoved:true },
     { id:2, side:Side.BLACK, kind:Kind.ROOK, position:{x:3,y:4,z:4}, hasMoved:true },
@@ -51,10 +50,19 @@ test("a wall-latched pawn captures diagonally upward and downward on YZ", () => 
   game.history=[]; game.lastFalls=[];
 
   const pawn = game.pieces[0];
+  assert.equal(game.isWallLatched(pawn.position), false);
   assert.deepEqual(
     game.legalMoves(pawn).filter(move => move.y === 4).map(move => move.z).sort((a,b) => a-b),
     [4, 6],
   );
+
+  for (const [z, capturedId] of [[4, 2], [6, 3]]) {
+    const capture = game.cloneForSimulation();
+    capture.setPlane(Plane.YZ);
+    assert.equal(capture.select(1), true);
+    assert.equal(capture.tryMove({x:3,y:4,z}), true);
+    assert.equal(capture.pieces.some(piece => piece.id === capturedId), false);
+  }
 
   game.setPlane(Plane.XZ);
   assert.ok(game.legalMoves(pawn).every(move => move.y === pawn.position.y));
