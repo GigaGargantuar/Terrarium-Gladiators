@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { TerrariumModel, Side, Kind, Plane } from "../docs/js/engine.js";
+import { TerrariumModel, Side, Kind, Plane, chooseBotMove } from "../docs/js/engine.js";
 
 test("creates the desktop game's starting position", () => {
   const game = new TerrariumModel();
@@ -50,4 +50,40 @@ test("capturing the king ends the game", () => {
   game.select(1);
   assert.equal(game.tryMove({x:0,y:4,z:0}), true);
   assert.equal(game.winner, Side.WHITE);
+});
+
+test("bot checks every opponent reply for mate even when evaluation is sampled", () => {
+  const game = new TerrariumModel(false);
+  game.solids = new Uint8Array(8 * 8 * 16);
+  game.pieces = [
+    { id:1, side:Side.WHITE, kind:Kind.ROOK, position:{x:0,y:0,z:0}, hasMoved:false },
+    { id:2, side:Side.WHITE, kind:Kind.KING, position:{x:7,y:7,z:0}, hasMoved:false },
+    { id:3, side:Side.WHITE, kind:Kind.QUEEN, position:{x:7,y:1,z:0}, hasMoved:false },
+    { id:4, side:Side.BLACK, kind:Kind.KING, position:{x:0,y:4,z:0}, hasMoved:false },
+    { id:5, side:Side.BLACK, kind:Kind.QUEEN, position:{x:6,y:1,z:0}, hasMoved:false },
+  ];
+  game.turn=Side.BLACK; game.plane=Plane.XY; game.winner=null; game.selectedId=null;
+  game.enPassantPawnId=null; game.enPassantTarget=null; game.pendingPromotionPieceId=null;
+  game.nextId=6; game.history=[]; game.lastFalls=[]; game.message="";
+
+  const move = chooseBotMove(game, 1);
+  assert.ok(move);
+
+  const after = game.cloneForSimulation();
+  after.setPlane(move.plane);
+  assert.equal(after.select(move.pieceId), true);
+  assert.equal(after.tryMove(move.target), true);
+
+  for (const plane of Object.values(Plane)) {
+    after.setPlane(plane);
+    for (const piece of after.pieces.filter(piece => piece.side === Side.WHITE)) {
+      for (const target of after.legalMoves(piece)) {
+        const reply = after.cloneForSimulation();
+        reply.setPlane(plane);
+        reply.select(piece.id);
+        reply.tryMove(target);
+        assert.notEqual(reply.winner, Side.WHITE, "bot allowed an opponent mate in one");
+      }
+    }
+  }
 });
