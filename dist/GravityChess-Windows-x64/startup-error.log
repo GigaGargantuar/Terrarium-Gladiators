@@ -1,0 +1,10 @@
+2026-08-24T23:13:25.7687705+07:00
+System.TypeInitializationException: The type initializer for 'Sdl' threw an exception.
+ ---> System.Exception: Failed to load library: SDL2.dll
+   at MonoGame.Framework.Utilities.FuncLoader.LoadLibraryExt(String libname)
+   at Sdl..cctor()
+   --- End of inner exception stack trace ---
+   at Microsoft.Xna.Framework.SdlGamePlatform..ctor(Game game)
+   at Microsoft.Xna.Framework.Game..ctor()
+   at GravityChess.Game1..ctor()
+   at Program.<Main>$(String[] args)

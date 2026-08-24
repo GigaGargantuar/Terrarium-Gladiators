@@ -1,0 +1,68 @@
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\net8.0\Content\UIFont.xnb
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\net8.0\GravityChess.exe
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\net8.0\GravityChess.deps.json
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\net8.0\GravityChess.runtimeconfig.json
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\net8.0\GravityChess.dll
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\net8.0\GravityChess.pdb
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\net8.0\MonoGame.Framework.dll
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\net8.0\NVorbis.dll
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\net8.0\runtimes\android-arm\native\libopenal.so
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\net8.0\runtimes\android-arm64\native\libopenal.so
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\net8.0\runtimes\android-x64\native\libopenal.so
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\net8.0\runtimes\android-x86\native\libopenal.so
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\net8.0\runtimes\ios-arm64\native\libopenal.a
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\net8.0\runtimes\iossimulator-arm64\native\libopenal.a
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\net8.0\runtimes\iossimulator-x64\native\libopenal.a
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\net8.0\runtimes\linux-arm64\native\libopenal.so
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\net8.0\runtimes\linux-x64\native\libopenal.so
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\net8.0\runtimes\osx\native\libopenal.dylib
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\net8.0\runtimes\win-arm64\native\openal.dll
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\net8.0\runtimes\win-x64\native\openal.dll
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\net8.0\runtimes\linux-arm64\native\libSDL2-2.0.so.0
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\net8.0\runtimes\linux-x64\native\libSDL2-2.0.so.0
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\net8.0\runtimes\osx\native\libSDL2-2.0.0.dylib
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\net8.0\runtimes\win-arm64\native\SDL2.dll
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\net8.0\runtimes\win-x64\native\SDL2.dll
+C:\Users\admin\Downloads\Gravity Chess\obj\Release\net8.0\mgcb.tool.restore
+C:\Users\admin\Downloads\Gravity Chess\obj\Release\net8.0\GravityChess.csproj.AssemblyReference.cache
+C:\Users\admin\Downloads\Gravity Chess\obj\Release\net8.0\GravityChess.GeneratedMSBuildEditorConfig.editorconfig
+C:\Users\admin\Downloads\Gravity Chess\obj\Release\net8.0\GravityChess.AssemblyInfoInputs.cache
+C:\Users\admin\Downloads\Gravity Chess\obj\Release\net8.0\GravityChess.AssemblyInfo.cs
+C:\Users\admin\Downloads\Gravity Chess\obj\Release\net8.0\GravityChess.csproj.CoreCompileInputs.cache
+C:\Users\admin\Downloads\Gravity Chess\obj\Release\net8.0\GravityC.9488B2B6.Up2Date
+C:\Users\admin\Downloads\Gravity Chess\obj\Release\net8.0\GravityChess.dll
+C:\Users\admin\Downloads\Gravity Chess\obj\Release\net8.0\refint\GravityChess.dll
+C:\Users\admin\Downloads\Gravity Chess\obj\Release\net8.0\GravityChess.pdb
+C:\Users\admin\Downloads\Gravity Chess\obj\Release\net8.0\GravityChess.genruntimeconfig.cache
+C:\Users\admin\Downloads\Gravity Chess\obj\Release\net8.0\ref\GravityChess.dll
+C:\Users\admin\AppData\Local\Temp\GravityChessVerify\Content\UIFont.xnb
+C:\Users\admin\AppData\Local\Temp\GravityChessVerify\GravityChess.exe
+C:\Users\admin\AppData\Local\Temp\GravityChessVerify\GravityChess.deps.json
+C:\Users\admin\AppData\Local\Temp\GravityChessVerify\GravityChess.runtimeconfig.json
+C:\Users\admin\AppData\Local\Temp\GravityChessVerify\GravityChess.dll
+C:\Users\admin\AppData\Local\Temp\GravityChessVerify\GravityChess.pdb
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\updated\Content\UIFont.xnb
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\updated\GravityChess.exe
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\updated\GravityChess.deps.json
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\updated\GravityChess.runtimeconfig.json
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\updated\GravityChess.dll
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\updated\GravityChess.pdb
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\updated\MonoGame.Framework.dll
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\updated\NVorbis.dll
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\updated\runtimes\android-arm\native\libopenal.so
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\updated\runtimes\android-arm64\native\libopenal.so
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\updated\runtimes\android-x64\native\libopenal.so
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\updated\runtimes\android-x86\native\libopenal.so
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\updated\runtimes\ios-arm64\native\libopenal.a
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\updated\runtimes\iossimulator-arm64\native\libopenal.a
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\updated\runtimes\iossimulator-x64\native\libopenal.a
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\updated\runtimes\linux-arm64\native\libopenal.so
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\updated\runtimes\linux-x64\native\libopenal.so
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\updated\runtimes\osx\native\libopenal.dylib
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\updated\runtimes\win-arm64\native\openal.dll
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\updated\runtimes\win-x64\native\openal.dll
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\updated\runtimes\linux-arm64\native\libSDL2-2.0.so.0
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\updated\runtimes\linux-x64\native\libSDL2-2.0.so.0
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\updated\runtimes\osx\native\libSDL2-2.0.0.dylib
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\updated\runtimes\win-arm64\native\SDL2.dll
+C:\Users\admin\Downloads\Gravity Chess\bin\Release\updated\runtimes\win-x64\native\SDL2.dll
