@@ -22,8 +22,11 @@ Then visit `http://localhost:8080/docs/`. Opening `index.html` directly is not
 recommended because browser module security rules differ for `file://` URLs.
 
 Deployment is configured in [`.github/workflows/pages.yml`](.github/workflows/pages.yml).
-After pushing to `main`, set **Settings → Pages → Build and deployment → Source** to
-**GitHub Actions** once. The workflow tests the rules engine and publishes `docs/`.
+
+**Required one-time setup:** before the first deployment, open the repository's
+**Settings → Pages → Build and deployment** and set **Source** to **GitHub Actions**.
+GitHub returns a `Get Pages site failed: Not Found` error until this is enabled.
+Afterward, every push to `main` tests the rules engine and publishes `docs/`.
 All site links are relative, so project Pages URLs such as
 `https://owner.github.io/repository/` work without a hard-coded base path.
 

@@ -1,2 +1,0 @@
-C:\Users\admin\Downloads\Gravity Chess\dist\GravityChess-Windows-x64\Content/UIFont.xnb
-C:\Users\admin\Downloads\Gravity Chess\dist\GravityChess-Windows-x64\GravityChess.exe

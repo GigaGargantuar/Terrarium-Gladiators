@@ -1,0 +1,12 @@
+# .NET / MonoGame build outputs
+bin/
+obj/
+dist/
+Content/bin/
+Content/obj/
+
+# Local IDE and runtime files
+*.user
+*.suo
+startup-error.log
+.DS_Store
