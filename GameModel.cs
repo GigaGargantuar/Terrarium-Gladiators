@@ -226,24 +226,26 @@ public sealed class TerrariumModel
     private void AddWallPawnMoves(ChessPiece piece, List<Int3> result, Int3 forward)
     {
         // Rotating a pawn into XZ/YZ is a wall action, not an alternate way to
-        // walk across a horizontal board. A pawn may begin while latched to a
-        // wall or while standing directly beside a wall it can climb.
-        if (!IsWallLatched(piece.Position)) return;
-
-        var oneUp = piece.Position + new Int3(0, 0, 1);
-        if (IsEmpty(oneUp))
+        // walk across a horizontal board. Hops and empty climbs require a wall
+        // latch, but an enemy on a YZ diagonal may always be captured.
+        var wallLatched = IsWallLatched(piece.Position);
+        if (wallLatched)
         {
-            // A straight vertical hop deliberately releases the wall latch.
-            // One cell consumes the turn safely; an initial two-cell hop drops
-            // hard enough to create a crater when gravity resolves.
-            result.Add(oneUp);
-            var twoUp = piece.Position + new Int3(0, 0, 2);
-            if (!piece.HasMoved && IsEmpty(twoUp)) result.Add(twoUp);
-        }
-        else if (IsSolid(oneUp))
-        {
-            // Pawns are the only pieces allowed to excavate directly upward.
-            result.Add(oneUp);
+            var oneUp = piece.Position + new Int3(0, 0, 1);
+            if (IsEmpty(oneUp))
+            {
+                // A straight vertical hop deliberately releases the wall latch.
+                // One cell consumes the turn safely; an initial two-cell hop drops
+                // hard enough to create a crater when gravity resolves.
+                result.Add(oneUp);
+                var twoUp = piece.Position + new Int3(0, 0, 2);
+                if (!piece.HasMoved && IsEmpty(twoUp)) result.Add(twoUp);
+            }
+            else if (IsSolid(oneUp))
+            {
+                // Pawns are the only pieces allowed to excavate directly upward.
+                result.Add(oneUp);
+            }
         }
 
         if (Plane != MovementPlane.YZ) return;
@@ -260,7 +262,7 @@ public sealed class TerrariumModel
             {
                 if (occupant.Side != piece.Side) result.Add(target);
             }
-            else if (!IsSolid(target) && CanPawnRest(target))
+            else if (wallLatched && !IsSolid(target) && CanPawnRest(target))
             {
                 result.Add(target);
             }
