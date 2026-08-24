@@ -255,9 +255,12 @@ function generateMoves(position,side){const moves=[];for(const plane of planes){
 function applyMove(position,move){const result=position.cloneForSimulation();result.plane=move.plane;if(!result.select(move.pieceId)||!result.tryMove(move.target))return null;if(result.pendingPromotionPieceId!=null)result.promote(Kind.QUEEN);return result;}
 
 export function chooseBotMove(position, replyLimit = 72){
-  if(position.winner)return null;const root=position.cloneForSimulation(),botSide=root.turn,opponent=other(botSide),moves=generateMoves(root,botSide);let best=null,bestScore=-Infinity;
-  for(const move of moves){const after=applyMove(root,move);if(!after)continue;if(after.winner===botSide)return move;let worst=Infinity,allowsMate=false;const replies=generateMoves(after,opponent);const sampled=replies.length>replyLimit?replies.filter((_,i)=>i%Math.ceil(replies.length/replyLimit)===0):replies;
-    if(!sampled.length)worst=evaluate(after,botSide);else for(const reply of sampled){const afterReply=applyMove(after,reply);if(!afterReply)continue;let score=evaluate(afterReply,botSide);if(afterReply.winner===opponent){score=-1e6;allowsMate=true;}worst=Math.min(worst,score);}
-    const score=worst+(allowsMate?-500000:0);if(score>bestScore){bestScore=score;best=move;}
-  }return best;
+  if(position.winner)return null;const root=position.cloneForSimulation(),botSide=root.turn,opponent=other(botSide),moves=generateMoves(root,botSide),analyses=[];
+  for(const move of moves){const after=applyMove(root,move);if(!after)continue;if(after.winner===botSide)return move;let worst=Infinity,hasEvaluation=false,allowsMate=false;const replies=generateMoves(after,opponent),sampleStep=replies.length>replyLimit?Math.ceil(replies.length/replyLimit):1;
+    // Positional scoring stays sampled for browser performance, but every legal
+    // reply is simulated so a king capture or gravity-caused mate is never missed.
+    for(let i=0;i<replies.length;i++){const afterReply=applyMove(after,replies[i]);if(!afterReply)continue;if(afterReply.winner===opponent){allowsMate=true;worst=-1e6;break;}if(i%sampleStep===0){worst=Math.min(worst,evaluate(afterReply,botSide));hasEvaluation=true;}}
+    if(!allowsMate&&!hasEvaluation)worst=evaluate(after,botSide);analyses.push({move,score:worst,allowsMate});
+  }
+  if(!analyses.length)return null;const safe=analyses.filter(analysis=>!analysis.allowsMate),candidates=safe.length?safe:analyses;let best=candidates[0];for(const candidate of candidates)if(candidate.score>best.score)best=candidate;return best.move;
 }
