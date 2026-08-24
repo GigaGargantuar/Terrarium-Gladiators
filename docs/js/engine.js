@@ -121,16 +121,18 @@ export class TerrariumModel {
   }
 
   addWallPawnMoves(piece, result, forward) {
-    if (!this.isWallLatched(piece.position)) return;
-    const oneUp = add(piece.position, v(0,0,1));
-    if (this.isEmpty(oneUp)) { result.push(oneUp); const twoUp = add(piece.position,v(0,0,2)); if (!piece.hasMoved && this.isEmpty(twoUp)) result.push(twoUp); }
-    else if (this.isSolid(oneUp)) result.push(oneUp);
+    const wallLatched = this.isWallLatched(piece.position);
+    if (wallLatched) {
+      const oneUp = add(piece.position, v(0,0,1));
+      if (this.isEmpty(oneUp)) { result.push(oneUp); const twoUp = add(piece.position,v(0,0,2)); if (!piece.hasMoved && this.isEmpty(twoUp)) result.push(twoUp); }
+      else if (this.isSolid(oneUp)) result.push(oneUp);
+    }
     if (this.plane !== Plane.YZ) return;
     for (const dz of [-1,1]) {
       const target = add(add(piece.position, forward), v(0,0,dz));
       if (!TerrariumModel.isInside(target)) continue;
       const occupant = this.pieceAt(target);
-      if (occupant ? occupant.side !== piece.side : !this.isSolid(target) && this.canPawnRest(target)) result.push(target);
+      if (occupant ? occupant.side !== piece.side : wallLatched && !this.isSolid(target) && this.canPawnRest(target)) result.push(target);
     }
   }
 

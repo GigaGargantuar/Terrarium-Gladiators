@@ -38,6 +38,75 @@ test("movement plane rotates knight offsets into XZ", () => {
   assert.ok(moves.every(p => p.y === knight.position.y));
 });
 
+test("a pawn captures diagonally upward and downward on YZ without a wall latch", () => {
+  const game = new TerrariumModel(false);
+  game.solids = new Uint8Array(8 * 8 * 16);
+  game.pieces = [
+    { id:1, side:Side.WHITE, kind:Kind.PAWN, position:{x:3,y:3,z:5}, hasMoved:true },
+    { id:2, side:Side.BLACK, kind:Kind.ROOK, position:{x:3,y:4,z:4}, hasMoved:true },
+    { id:3, side:Side.BLACK, kind:Kind.BISHOP, position:{x:3,y:4,z:6}, hasMoved:true },
+  ];
+  game.turn=Side.WHITE; game.plane=Plane.YZ; game.winner=null; game.selectedId=null;
+  game.history=[]; game.lastFalls=[];
+
+  const pawn = game.pieces[0];
+  assert.equal(game.isWallLatched(pawn.position), false);
+  assert.deepEqual(
+    game.legalMoves(pawn).filter(move => move.y === 4).map(move => move.z).sort((a,b) => a-b),
+    [4, 6],
+  );
+
+  for (const [z, capturedId] of [[4, 2], [6, 3]]) {
+    const capture = game.cloneForSimulation();
+    capture.setPlane(Plane.YZ);
+    assert.equal(capture.select(1), true);
+    assert.equal(capture.tryMove({x:3,y:4,z}), true);
+    assert.equal(capture.pieces.some(piece => piece.id === capturedId), false);
+  }
+
+  game.setPlane(Plane.XZ);
+  assert.ok(game.legalMoves(pawn).every(move => move.y === pawn.position.y));
+});
+
+test("a wall-latched pawn can hop upward and settle back safely", () => {
+  const game = new TerrariumModel(false);
+  game.solids = new Uint8Array(8 * 8 * 16);
+  game.setSolid(3, 3, 4, true);
+  game.setSolid(4, 3, 5, true);
+  game.pieces = [
+    { id:1, side:Side.WHITE, kind:Kind.PAWN, position:{x:3,y:3,z:5}, hasMoved:true },
+  ];
+  game.turn=Side.WHITE; game.plane=Plane.XZ; game.winner=null; game.selectedId=null;
+  game.history=[]; game.lastFalls=[];
+
+  const hop = {x:3,y:3,z:6};
+  assert.ok(game.legalMoves(game.pieces[0]).some(move => move.x===hop.x && move.y===hop.y && move.z===hop.z));
+  assert.equal(game.select(1), true);
+  assert.equal(game.tryMove(hop), true);
+  assert.deepEqual(game.pieces[0].position, {x:3,y:3,z:5});
+  assert.ok(game.lastFalls.some(fall => fall.pieceId===1 && fall.from.z===6 && fall.to.z===5));
+});
+
+test("moving the bottom piece carries its contiguous tower", () => {
+  const game = new TerrariumModel(false);
+  game.solids = new Uint8Array(8 * 8 * 16);
+  game.setSolid(3, 1, 4, true);
+  game.pieces = [
+    { id:1, side:Side.WHITE, kind:Kind.ROOK, position:{x:1,y:1,z:5}, hasMoved:true },
+    { id:2, side:Side.WHITE, kind:Kind.KNIGHT, position:{x:1,y:1,z:6}, hasMoved:true },
+    { id:3, side:Side.BLACK, kind:Kind.BISHOP, position:{x:1,y:1,z:7}, hasMoved:true },
+  ];
+  game.turn=Side.WHITE; game.plane=Plane.XY; game.winner=null; game.selectedId=null;
+  game.history=[]; game.lastFalls=[];
+
+  assert.equal(game.select(1), true);
+  assert.equal(game.tryMove({x:3,y:1,z:5}), true);
+  assert.deepEqual(
+    game.pieces.sort((a,b) => a.position.z-b.position.z).map(piece => piece.position),
+    [{x:3,y:1,z:5}, {x:3,y:1,z:6}, {x:3,y:1,z:7}],
+  );
+});
+
 test("capturing the king ends the game", () => {
   const game = new TerrariumModel(false);
   game.solids = new Uint8Array(8 * 8 * 16);
