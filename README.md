@@ -26,8 +26,8 @@ Deployment is configured in [`.github/workflows/pages.yml`](.github/workflows/pa
 **Required one-time setup:** before the first deployment, open the repository's
 **Settings → Pages → Build and deployment** and set **Source** to **GitHub Actions**.
 GitHub returns a `Get Pages site failed: Not Found` error until this is enabled.
-Afterward, every push to `main` tests the rules engine and publishes `docs/`.
-All site links are relative, so project Pages URLs such as
+Afterward, every push to `main` tests the rules engine and publishes the repository
+root; its landing page redirects into `docs/`. All site links are relative, so project Pages URLs such as
 `https://owner.github.io/repository/` work without a hard-coded base path.
 
 Run the browser rule tests with:
