@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#081319">
+  <meta name="theme-color" content="#070b14">
   <meta name="description" content="Terrarium Gladiators — tactical combat across three planes in a destructible 3D arena.">
   <title>Terrarium Gladiators</title>
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
@@ -11,98 +11,90 @@
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
-  <a class="skip-link" href="#game">Skip to game</a>
-  <main id="game" class="app-shell">
-    <header class="topbar">
-      <div class="brand" aria-label="Terrarium Gladiators">
-        <img class="brand-icon" src="assets/icon.svg" alt="">
-        <span><b>TERRARIUM</b><em>GLADIATORS</em></span>
-      </div>
-      <div class="turn-chip"><span id="turn-dot"></span><span id="turn-label">White to move</span></div>
-      <div class="top-actions">
-        <button id="undo-button" class="icon-button" title="Undo (U)" aria-label="Undo move">↶</button>
-        <button id="restart-button" class="icon-button" title="Restart (R)" aria-label="Restart game">↻</button>
-        <button id="help-button" class="text-button" aria-expanded="false">How to play <kbd>H</kbd></button>
-      </div>
-    </header>
-
-    <section class="game-layout">
-      <aside class="control-panel" aria-label="Game controls">
-        <div class="panel-heading"><span>MOVE PLANE</span><small>Choose the axes your piece moves on</small></div>
-        <div id="plane-buttons" class="plane-grid" role="radiogroup" aria-label="Movement plane">
-          <button data-plane="XY" role="radio" aria-checked="true"><span class="plane-glyph xy"><i></i></span><b>XY</b><small>Surface</small><kbd>1</kbd></button>
-          <button data-plane="XZ" role="radio" aria-checked="false"><span class="plane-glyph xz"><i></i></span><b>XZ</b><small>Cross-section</small><kbd>2</kbd></button>
-          <button data-plane="YZ" role="radio" aria-checked="false"><span class="plane-glyph yz"><i></i></span><b>YZ</b><small>Cross-section</small><kbd>3</kbd></button>
-        </div>
-
-        <div class="divider"></div>
-        <div class="panel-heading"><span>LAYER FOCUS</span><small>Inspect one depth without hiding pieces</small></div>
-        <button id="layer-toggle" class="layer-toggle" aria-pressed="false"><span class="toggle-track"><i></i></span><b>All layers</b><kbd>M</kbd></button>
-        <label class="depth-row" for="depth-slider"><span>Depth</span><output id="depth-output">Z8</output></label>
-        <input id="depth-slider" type="range" min="0" max="15" value="8" disabled>
-        <div class="depth-scale"><span>Z0</span><span>Z15</span></div>
-
-        <div class="divider"></div>
-        <div class="legend">
-          <span><i class="safe"></i>Safe move</span>
-          <span><i class="impact"></i>Impact / excavate</span>
-          <span><i class="fatal"></i>Fatal fall</span>
-        </div>
-      </aside>
-
-      <section class="stage-wrap" aria-label="3D chess board">
-        <canvas id="board" tabindex="0" aria-label="Interactive Terrarium Gladiators arena. Use Tab to cycle pieces."></canvas>
-        <div class="stage-tools">
-          <button id="rotate-left" aria-label="Rotate left">↶</button>
-          <span>DRAG TO ORBIT</span>
-          <button id="rotate-right" aria-label="Rotate right">↷</button>
-        </div>
-        <div id="thinking" class="thinking" hidden><i></i><span>BLACK IS CALCULATING</span></div>
-      </section>
-
-      <aside class="status-panel" aria-live="polite">
-        <div class="panel-heading"><span>GAME STATUS</span></div>
-        <div class="selected-card">
-          <small>SELECTED PIECE</small>
-          <div id="selected-piece"><span class="piece-token">—</span><div><b>None</b><small>Choose one of your pieces</small></div></div>
-        </div>
-        <div class="move-status"><span id="message">White to move — select a piece, then a glowing cell.</span></div>
-        <div class="quick-keys">
-          <div><kbd>SPACE</kbd><span>Cycle plane</span></div>
-          <div><kbd>TAB</kbd><span>Next piece</span></div>
-          <div><kbd>U</kbd><span>Undo</span></div>
-          <div><kbd>Q / E</kbd><span>Rotate</span></div>
-        </div>
-      </aside>
+  <a class="skip-link" href="#board">Skip to the arena</a>
+  <main id="game" class="game-frame">
+    <section class="world" aria-label="3D game arena">
+      <canvas id="board" tabindex="0" aria-label="Interactive three-dimensional Terrarium Gladiators arena"></canvas>
+      <div class="world-stars" aria-hidden="true"></div>
+      <div id="thinking" class="thinking" hidden><i></i> BLACK BOT THINKING</div>
     </section>
 
-    <footer><span>Capture or crush the enemy king to win.</span><span>Browser edition · Saves no data</span></footer>
+    <aside class="sidebar" aria-live="polite">
+      <header class="brand">
+        <div><b>TERRARIUM</b><strong>GLADIATORS</strong></div>
+        <button id="help-button" aria-label="Show rules" title="Rules (H)">?</button>
+      </header>
+      <p id="camera-readout" class="camera-readout">TRUE 3D / 45° / CAM Z 20.4</p>
+
+      <section class="turn-block">
+        <h1 id="turn-label">WHITE TO MOVE</h1>
+        <p id="selected-piece">No piece selected</p>
+      </section>
+
+      <section>
+        <h2>MOVEMENT PLANE</h2>
+        <div id="plane-buttons" class="plane-buttons" role="radiogroup" aria-label="Movement plane">
+          <button data-plane="XY" role="radio" aria-checked="true"><b>XY</b><kbd>1</kbd></button>
+          <button data-plane="XZ" role="radio" aria-checked="false"><b>XZ</b><kbd>2</kbd></button>
+          <button data-plane="YZ" role="radio" aria-checked="false"><b>YZ</b><kbd>3</kbd></button>
+        </div>
+        <p class="legend"><i class="safe"></i> TEAL safe&nbsp;&nbsp;·&nbsp;&nbsp;<i class="impact"></i> YELLOW crater/dig&nbsp;&nbsp;·&nbsp;&nbsp;<i class="fatal"></i> RED fatal</p>
+      </section>
+
+      <section>
+        <h2>FIELD REPORT</h2>
+        <div class="field-report"><p id="message">White to move. Select a piece.</p></div>
+      </section>
+
+      <section class="protocol">
+        <h2>ARENA PROTOCOL</h2>
+        <div class="rule safe"><b>0–1 CELL DROP</b><span>Safe landing · pieces may stack</span></div>
+        <div class="rule fatal"><b>2+ CELL DROP</b><span>Impact crushes terrain or piece</span></div>
+        <div class="rule impact"><b>4+ / TERRAIN</b><span>Fatal unless a piece breaks the fall</span></div>
+      </section>
+
+      <section class="camera-controls">
+        <p>Drag X: orbit&nbsp;&nbsp;·&nbsp;&nbsp;Drag Y: 30°–60°</p>
+        <button id="layer-toggle" aria-pressed="false"><b>MB&nbsp;&nbsp;LAYER FOCUS: OFF</b></button>
+        <label for="depth-slider">Wheel select depth <output id="depth-output">Z08</output></label>
+        <input id="depth-slider" type="range" min="0" max="15" value="8" disabled>
+        <p>H&nbsp;&nbsp;rules&nbsp;&nbsp;·&nbsp;&nbsp;Q / E&nbsp;&nbsp;orbit</p>
+      </section>
+
+      <div class="bottom-actions">
+        <button id="undo-button">U&nbsp;&nbsp;UNDO</button>
+        <button id="restart-button">R&nbsp;&nbsp;RESTART</button>
+      </div>
+      <p class="role-note">You are White&nbsp;&nbsp;·&nbsp;&nbsp;Black is the bot</p>
+      <p class="deselect-note">Right-click to deselect</p>
+    </aside>
   </main>
 
   <dialog id="help-dialog">
     <form method="dialog" class="dialog-shell">
       <button class="dialog-close" aria-label="Close help">×</button>
-      <p class="eyebrow">FIELD MANUAL</p>
-      <h1>Chess, with a third axis<br>and consequences.</h1>
+      <p class="eyebrow">THE TERRARIUM IN TRUE 3D</p>
+      <h1>Movement has a third axis.<br>Gravity has consequences.</h1>
       <div class="help-grid">
-        <section><b>01</b><h2>Choose a piece</h2><p>You play White. Select a piece, then choose a highlighted destination. Black responds automatically.</p></section>
-        <section><b>02</b><h2>Rotate the rules</h2><p>XY is familiar chess. XZ and YZ rotate movement into vertical planes. Pawns use them to climb or excavate walls.</p></section>
-        <section><b>03</b><h2>Read the landing</h2><p><mark class="safe">Teal</mark> is safe, <mark class="impact">amber</mark> creates an impact or excavates, and <mark class="fatal">red</mark> means the mover will perish.</p></section>
-        <section><b>04</b><h2>Use gravity</h2><p>Long falls shatter terrain or squash pieces. Towers travel together, shelves can collapse, and capturing or crushing a King wins.</p></section>
+        <section><b>01</b><h3>Select</h3><p>Click a sculpted piece, then choose a highlighted 3D destination.</p></section>
+        <section><b>02</b><h3>Move the camera</h3><p>Drag to orbit and tilt. Use Up / Down to move the camera target vertically.</p></section>
+        <section><b>03</b><h3>Isolate depth</h3><p>Middle-click, then scroll through Z0–Z15 to inspect a single slice.</p></section>
+        <section><b>04</b><h3>Climb or excavate</h3><p>Vertical pawns need walls: climb, capture, or dig straight up.</p></section>
+        <section><b>05</b><h3>Use gravity</h3><p>Falling pieces accelerate, bounce, crush, or fade on fatal impact.</p></section>
       </div>
-      <div class="controls-copy">
-        <p><kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> movement plane</p><p><kbd>Q</kbd><kbd>E</kbd> rotate</p><p><kbd>M</kbd> layer focus</p><p><kbd>R</kbd> restart</p><p><kbd>Esc</kbd> close</p>
-      </div>
-      <button class="primary-button" value="close">Enter the board</button>
+      <button class="primary-button" value="close">RETURN TO THE ARENA</button>
     </form>
   </dialog>
 
   <dialog id="promotion-dialog">
     <div class="promotion-shell">
-      <p class="eyebrow">PROMOTION</p><h2>Choose your piece</h2>
+      <p class="eyebrow">CHOOSE YOUR PROMOTION</p>
+      <h2>The pawn reached the far rank.</h2>
       <div id="promotion-buttons">
-        <button data-kind="Queen"><span>♛</span>Queen</button><button data-kind="Rook"><span>♜</span>Rook</button>
-        <button data-kind="Bishop"><span>♝</span>Bishop</button><button data-kind="Knight"><span>♞</span>Knight</button>
+        <button data-kind="Queen">QUEEN <kbd>Q</kbd></button>
+        <button data-kind="Rook">ROOK <kbd>R</kbd></button>
+        <button data-kind="Bishop">BISHOP <kbd>B</kbd></button>
+        <button data-kind="Knight">KNIGHT <kbd>N</kbd></button>
       </div>
     </div>
   </dialog>
