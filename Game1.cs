@@ -323,7 +323,7 @@ public sealed class Game1 : Game
     {
         var patterns = ScoutPatterns; if (patterns.Count == 0) return;
         _scoutPatternIndex %= patterns.Count;
-        if (_model.Scout(patterns[_scoutPatternIndex])) _positionVersion++;
+        if (_model.Scout(patterns[_scoutPatternIndex]) is not null) _positionVersion++;
     }
 
     private void SetMatchMode(MatchMode mode)

@@ -25,6 +25,7 @@ export class TerrariumModel {
     this.mineFlags = new Set();
     this.botSafeMarks = new Set();
     this.botMineFlags = new Set();
+    this.scanObservations = [];
     this.cavernProtected = new Set();
     this.disturbedTerrain = new Set();
     this.pieces = [];
@@ -45,7 +46,7 @@ export class TerrariumModel {
     this.solids = new Uint8Array(8 * 8 * 16);
     for (let x = 0; x < 8; x++) for (let y = 0; y < 8; y++) for (let z = 0; z < 8; z++) this.setSolid(x, y, z, true);
     if(this.minesweeperEnabled)this.generateMinefield(mineSeed??TerrariumModel.randomMineSeed());else{this.mines=new Uint8Array(8*8*16);this.revealedClues=new Set();this.cavernProtected=new Set();this.disturbedTerrain=new Set()}
-    this.safeMarks=new Set();this.mineFlags=new Set();this.botSafeMarks=new Set();this.botMineFlags=new Set();
+    this.safeMarks=new Set();this.mineFlags=new Set();this.botSafeMarks=new Set();this.botMineFlags=new Set();this.scanObservations=[];
     this.pieces = [];
     this.nextId = 1;
     this.addArmy(Side.WHITE, 0, 1);
@@ -113,6 +114,7 @@ export class TerrariumModel {
     copy.revealedClues = new Set(this.revealedClues??[]);
     copy.safeMarks = new Set(this.safeMarks??[]);copy.mineFlags = new Set(this.mineFlags??[]);
     copy.botSafeMarks = new Set(this.botSafeMarks??[]);copy.botMineFlags = new Set(this.botMineFlags??[]);
+    copy.scanObservations = (this.scanObservations??[]).map(observation=>({...observation,origin:{...observation.origin},cells:[...observation.cells]}));
     copy.cavernProtected = new Set(this.cavernProtected??[]);copy.disturbedTerrain=new Set(this.disturbedTerrain??[]);
     copy.pieces = this.pieces.map(clonePiece);
     copy.turn = this.turn; copy.plane = this.plane; copy.winner = this.winner;
@@ -182,9 +184,9 @@ export class TerrariumModel {
     if(pattern==="plane-diagonal"){const directions=[];for(const x of[-1,0,1])for(const y of[-1,0,1])for(const z of[-1,0,1])if(Math.abs(x)+Math.abs(y)+Math.abs(z)===2)directions.push(v(x,y,z));return directions}
     return this.spaceDiagonalDirections();
   }
-  scout(pattern,recordBotKnowledge=false){const piece=this.selected;if(!this.minesweeperEnabled||!piece||!this.scoutPatterns(piece).includes(pattern)||this.winner)return false;const dirs=this.scanDirections(piece,pattern),cells=[];
-    for(const d of dirs){const p=add(piece.position,d);if(p.x< -1||p.x>8||p.y< -1||p.y>8||p.z< -1||p.z>16)continue;const encoded=key(p);if(this.mineAt(p.x,p.y,p.z)){if(recordBotKnowledge&&TerrariumModel.isInside(p)){this.botSafeMarks.delete(encoded);this.botMineFlags.add(encoded)}}else{this.revealedClues.add(encoded);cells.push(p);if(recordBotKnowledge&&TerrariumModel.isInside(p)&&this.isSolid(p)){this.botMineFlags.delete(encoded);this.botSafeMarks.add(encoded)}}}
-    const clues=cells.map(p=>this.clueAt(p)).filter(n=>n!=null),danger=clues.filter(n=>n>0).length,max=clues.length?Math.max(...clues):0;this.message=`${piece.side} ${piece.kind} scouted ${pattern}: ${clues.length} clues, ${danger} warned of mines (max ${max}). Scouting is free.`;return true;
+  scout(pattern){const piece=this.selected;if(!this.minesweeperEnabled||!piece||!this.scoutPatterns(piece).includes(pattern)||this.winner)return null;const cells=this.scanDirections(piece,pattern).map(direction=>add(piece.position,direction)).filter(TerrariumModel.isInside),encodedCells=[...new Set(cells.map(key))],mineCount=cells.filter(cell=>this.mineAt(cell.x,cell.y,cell.z)).length;
+    this.scanObservations=(this.scanObservations??[]).filter(observation=>!(observation.side===piece.side&&eq(observation.origin,piece.position)&&observation.pattern===pattern));this.scanObservations.push({side:piece.side,origin:{...piece.position},pattern,cells:encodedCells,mineCount});
+    this.message=`${piece.side} ${piece.kind} scouted ${pattern}: ${mineCount} mine(s). Scouting is free.`;return mineCount;
   }
 
   addPawnMoves(piece, result) {
@@ -302,6 +304,7 @@ export class TerrariumModel {
 
   removeTerrain(p,events,pieceId=null,contact=p){if(!this.isSolid(p))return false;this.setSolid(p.x,p.y,p.z,false);this.lastTerrainChanges?.push({cell:{...p},solid:false,pieceId,contact:{...contact}});this.disturbedTerrain?.add(key(p));this.revealedClues?.add(key(p));if(this.mineAt(p.x,p.y,p.z))this.detonateMine(p,events,pieceId,contact);return true}
   detonateMine(p,events,sourcePieceId=null,contact=p){this.mines[this.solidIndex(p.x,p.y,p.z)]=0;let casualties=0;
+    const detonated=key(p);for(const observation of this.scanObservations??[])if(observation.cells.includes(detonated))observation.mineCount=Math.max(0,observation.mineCount-1);
     for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)for(let dz=-1;dz<=1;dz++){const blast=add(p,v(dx,dy,dz));this.revealedClues?.add(key(blast));for(const victim of [...this.pieces])if(eq(victim.position,blast)){this.lastPieceRemovals?.push({pieceId:victim.id,sourcePieceId,contact:{...contact}});this.destroyPiece(victim,`${victim.kind} was caught in a mine blast.`);casualties++}}
     events.push(`Mine detonated at ${TerrariumModel.cellName(p)}: ${casualties} piece(s) hit; terrain outside the dent was untouched.`)
   }
@@ -341,8 +344,8 @@ export class TerrariumModel {
   findSupportZ(x,y,startZ,excludedId=null){for(let z=startZ;z>=0;z--){if(this.solidAt(x,y,z))return z;const occupant=this.pieceAt(v(x,y,z));if(occupant&&occupant.id!==excludedId)return z;}return -1;}
   destroyPiece(piece,reason){this.pieces=this.pieces.filter(p=>p!==piece);if(piece.kind===Kind.KING){this.winner=other(piece.side);this.message=`${reason}  ${this.winner} wins!`;}}
 
-  pushHistory(){this.history.push({solids:this.solids.slice(),mines:this.mines?.slice(),revealedClues:[...(this.revealedClues??[])],cavernProtected:[...(this.cavernProtected??[])],disturbedTerrain:[...(this.disturbedTerrain??[])],pieces:this.pieces.map(clonePiece),turn:this.turn,plane:this.plane,winner:this.winner,message:this.message,selectedId:this.selectedId,enPassantPawnId:this.enPassantPawnId,enPassantTarget:this.enPassantTarget&&{...this.enPassantTarget},pendingPromotionPieceId:this.pendingPromotionPieceId});}
-  undo(){const s=this.history.pop();if(!s)return false;this.solids=s.solids.slice();this.mines=s.mines?.slice()??new Uint8Array(8*8*16);this.revealedClues=new Set(s.revealedClues??[]);this.cavernProtected=new Set(s.cavernProtected??[]);this.disturbedTerrain=new Set(s.disturbedTerrain??[]);this.pieces=s.pieces.map(clonePiece);this.turn=s.turn;this.plane=s.plane;this.winner=s.winner;this.message="Move undone.";this.selectedId=s.selectedId;this.enPassantPawnId=s.enPassantPawnId;this.enPassantTarget=s.enPassantTarget&&{...s.enPassantTarget};this.pendingPromotionPieceId=s.pendingPromotionPieceId;this.lastFalls=[];this.lastTerrainChanges=[];this.lastPieceRemovals=[];return true;}
+  pushHistory(){this.history.push({solids:this.solids.slice(),mines:this.mines?.slice(),revealedClues:[...(this.revealedClues??[])],scanObservations:(this.scanObservations??[]).map(observation=>({...observation,origin:{...observation.origin},cells:[...observation.cells]})),cavernProtected:[...(this.cavernProtected??[])],disturbedTerrain:[...(this.disturbedTerrain??[])],pieces:this.pieces.map(clonePiece),turn:this.turn,plane:this.plane,winner:this.winner,message:this.message,selectedId:this.selectedId,enPassantPawnId:this.enPassantPawnId,enPassantTarget:this.enPassantTarget&&{...this.enPassantTarget},pendingPromotionPieceId:this.pendingPromotionPieceId});}
+  undo(){const s=this.history.pop();if(!s)return false;this.solids=s.solids.slice();this.mines=s.mines?.slice()??new Uint8Array(8*8*16);this.revealedClues=new Set(s.revealedClues??[]);this.scanObservations=(s.scanObservations??[]).map(observation=>({...observation,origin:{...observation.origin},cells:[...observation.cells]}));this.cavernProtected=new Set(s.cavernProtected??[]);this.disturbedTerrain=new Set(s.disturbedTerrain??[]);this.pieces=s.pieces.map(clonePiece);this.turn=s.turn;this.plane=s.plane;this.winner=s.winner;this.message="Move undone.";this.selectedId=s.selectedId;this.enPassantPawnId=s.enPassantPawnId;this.enPassantTarget=s.enPassantTarget&&{...s.enPassantTarget};this.pendingPromotionPieceId=s.pendingPromotionPieceId;this.lastFalls=[];this.lastTerrainChanges=[];this.lastPieceRemovals=[];return true;}
   surfaceZ(x,y){for(let z=15;z>=0;z--)if(this.solidAt(x,y,z))return z;return -1;}
   predictedFall(p){if(!TerrariumModel.isInside(p))return 0;const support=this.findSupportZ(p.x,p.y,p.z-1,this.selectedId);return Math.max(0,p.z-(support+1));}
   predictOutcome(target){if(this.isExcavationTarget(target))return Outcome.EXCAVATION;const moving=this.selected,releases=moving?.kind===Kind.PAWN&&this.plane!==Plane.XY&&target.x===moving.position.x&&target.y===moving.position.y&&target.z>moving.position.z;if(moving?.kind===Kind.PAWN&&!releases&&this.canPawnRest(target))return Outcome.SAFE;const support=this.findSupportZ(target.x,target.y,target.z-1,this.selectedId),fall=Math.max(0,target.z-(support+1));if(fall<2)return Outcome.SAFE;const impact=support>=0?this.pieceAt(v(target.x,target.y,support)):null,pieceBreaks=impact&&impact.id!==this.selectedId,movingTower=moving&&this.planTowerTransport(moving,target).members.some(m=>eq(m.destination,add(target,v(0,0,1))));return !pieceBreaks&&(movingTower||fall>=4)?Outcome.FATAL:Outcome.CRATER;}
@@ -363,6 +366,7 @@ function visibleConstraints(position,knownSafe,knownMines){
     for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)for(let dz=-1;dz<=1;dz++){if(!(dx||dy||dz))continue;const cell=add(clueCell,v(dx,dy,dz)),cellKey=key(cell);if(!TerrariumModel.isInside(cell)||cell.z>=7||!position.isSolid(cell))continue;if(knownMines.has(cellKey))adjacentKnownMines++;else if(!knownSafe.has(cellKey))cells.add(cellKey)}
     const remaining=clue-adjacentKnownMines;if(cells.size&&remaining>=0&&remaining<=cells.size)constraints.push({cells,remaining});
   }
+  for(const observation of position.scanObservations??[]){const cells=new Set(),active=observation.cells.filter(encoded=>{const cell=parseKey(encoded);return cell.z<7&&position.isSolid(cell)}),adjacentKnownMines=active.filter(encoded=>knownMines.has(encoded)).length;for(const encoded of active)if(!knownSafe.has(encoded)&&!knownMines.has(encoded))cells.add(encoded);const remaining=observation.mineCount-adjacentKnownMines;if(cells.size&&remaining>=0&&remaining<=cells.size)constraints.push({cells,remaining})}
   return constraints;
 }
 
@@ -385,7 +389,7 @@ function deduceMineKnowledge(position){
 export function prepareBotTurn(position){
   if(!position.minesweeperEnabled||position.winner)return;
   const originalSelection=position.selectedId,side=position.turn;let scans=0;
-  for(const piece of position.pieces.filter(piece=>piece.side===side)){if(!position.select(piece.id))continue;for(const pattern of [...position.scoutPatterns(piece)])if(position.scout(pattern,true))scans++}
+  for(const piece of position.pieces.filter(piece=>piece.side===side)){if(!position.select(piece.id))continue;for(const pattern of [...position.scoutPatterns(piece)])if(position.scout(pattern)!==null)scans++}
   deduceMineKnowledge(position);if(originalSelection==null||!position.select(originalSelection))position.clearSelection();
   position.message=`${side} bot used ${scans} free scans and now marks ${position.botSafeMarks.size} clear / ${position.botMineFlags.size} mined cells.`;
 }

@@ -12,6 +12,9 @@ self.addEventListener("message", event => {
     model.mines[model.solidIndex(x, y, z)] = 1;
   }
   model.revealedClues = new Set(state.revealedClues ?? []);
+  model.scanObservations = (state.scanObservations ?? []).map(observation => ({
+    ...observation, origin: { ...observation.origin }, cells: [...observation.cells],
+  }));
   model.cavernProtected = new Set(state.cavernProtected ?? []);
   model.disturbedTerrain = new Set(state.disturbedTerrain ?? []);
   model.minesweeperEnabled = !!state.minesweeperEnabled;

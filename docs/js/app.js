@@ -89,7 +89,7 @@ function setMatchMode(mode){
 function undo(){if(transitionActive())return;clearTimeout(botTimer);pendingBot=false;ui.thinking.hidden=true;if(!model.undo())return;if(matchMode===MatchMode.PVBOT&&model.turn===Side.BLACK&&!model.winner)model.undo();positionVersion++;startBotWorker();syncUI();if(isBotTurn())queueBot()}
 function queueBot(){
   if(!isBotTurn()||model.winner||model.pendingPromotionPieceId!=null||transitionActive())return;const version=++positionVersion;ui.thinking.hidden=false;syncUI();
-  botTimer=setTimeout(()=>{if(version!==positionVersion||!isBotTurn())return;prepareBotTurn(model);syncUI();const state=model.cloneForBotSearch();botWorker.postMessage({version,state:{solids:[...state.solids],revealedClues:[...state.revealedClues],botSafeMarks:[...state.botSafeMarks],botMineFlags:[...state.botMineFlags],cavernProtected:[...state.cavernProtected],disturbedTerrain:[...state.disturbedTerrain],minesweeperEnabled:state.minesweeperEnabled,pieces:state.pieces,turn:state.turn,plane:state.plane,winner:state.winner,message:state.message,selectedId:state.selectedId,enPassantPawnId:state.enPassantPawnId,enPassantTarget:state.enPassantTarget,pendingPromotionPieceId:state.pendingPromotionPieceId,nextId:state.nextId}})},460);
+  botTimer=setTimeout(()=>{if(version!==positionVersion||!isBotTurn())return;prepareBotTurn(model);syncUI();const state=model.cloneForBotSearch();botWorker.postMessage({version,state:{solids:[...state.solids],revealedClues:[...state.revealedClues],scanObservations:state.scanObservations,botSafeMarks:[...state.botSafeMarks],botMineFlags:[...state.botMineFlags],cavernProtected:[...state.cavernProtected],disturbedTerrain:[...state.disturbedTerrain],minesweeperEnabled:state.minesweeperEnabled,pieces:state.pieces,turn:state.turn,plane:state.plane,winner:state.winner,message:state.message,selectedId:state.selectedId,enPassantPawnId:state.enPassantPawnId,enPassantTarget:state.enPassantTarget,pendingPromotionPieceId:state.pendingPromotionPieceId,nextId:state.nextId}})},460);
 }
 function executeMove(target){
   const moving=model.selected;if(!moving)return;const beforeSolids=model.solids.slice(),beforeMines=model.mines.slice(),beforeClues=new Set(model.revealedClues),beforePieces=clonePieces(model.pieces),from={...moving.position};
@@ -117,7 +117,7 @@ document.querySelector("#undo-button").addEventListener("click",undo);document.q
 ui.mode.addEventListener("change",()=>setMatchMode(ui.mode.value));
 ui.mine.addEventListener("change",()=>{model.minesweeperEnabled=ui.mine.checked;reset()});
 ui.botMarks.addEventListener("change",()=>{dirty=true});
-ui.scoutButton.addEventListener("click",()=>{if(!isHumanTurn()||transitionActive()||!model.scout(ui.scoutPattern.value))return;positionVersion++;syncUI()});
+ui.scoutButton.addEventListener("click",()=>{if(!isHumanTurn()||transitionActive()||model.scout(ui.scoutPattern.value)==null)return;positionVersion++;syncUI()});
 for(const button of document.querySelectorAll("[data-kind]"))button.addEventListener("click",()=>{if(model.promote(button.dataset.kind)){ui.promotion.close();positionVersion++;pendingBot=false;syncUI();if(isBotTurn())queueBot()}});
 window.addEventListener("keydown",e=>{
   if(ui.help.open){if(["h","Escape"].includes(e.key))ui.help.close();return}const key=e.key.toLowerCase();if(ui.promotion.open){const promotion={q:Kind.QUEEN,r:Kind.ROOK,b:Kind.BISHOP,n:Kind.KNIGHT,t:Kind.TRISHOP}[key];if(promotion)document.querySelector(`[data-kind="${promotion}"]`).click();return}

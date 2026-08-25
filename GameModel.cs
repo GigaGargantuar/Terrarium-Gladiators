@@ -37,12 +37,25 @@ public sealed record PieceFallEvent(int PieceId, Side Side, PieceKind Kind, Int3
     bool Perished, bool StartsWithMove = false);
 public sealed record TerrainChangeEvent(Int3 Cell, bool Solid, int? PieceId, Int3 Contact);
 public sealed record PieceRemovalEvent(int PieceId, int? SourcePieceId, Int3 Contact);
+public sealed class ScanObservation
+{
+    public required Side Side { get; init; }
+    public required Int3 Origin { get; init; }
+    public required string Pattern { get; init; }
+    public required HashSet<Int3> Cells { get; init; }
+    public int MineCount { get; set; }
+    public ScanObservation Clone() => new()
+    {
+        Side = Side, Origin = Origin, Pattern = Pattern,
+        Cells = new HashSet<Int3>(Cells), MineCount = MineCount
+    };
+}
 
 public sealed class TerrariumModel
 {
     private sealed record TowerTransport(List<(ChessPiece Piece, Int3 Destination)> Members, int KnockedOff);
 
-    private sealed record Snapshot(bool[,,] Solids, bool[,,] Mines, HashSet<Int3> RevealedClues, HashSet<Int3> CavernProtected, HashSet<Int3> DisturbedTerrain, List<ChessPiece> Pieces, Side Turn,
+    private sealed record Snapshot(bool[,,] Solids, bool[,,] Mines, HashSet<Int3> RevealedClues, List<ScanObservation> ScanObservations, HashSet<Int3> CavernProtected, HashSet<Int3> DisturbedTerrain, List<ChessPiece> Pieces, Side Turn,
         MovementPlane Plane, Side? Winner, string Message, int? SelectedId,
         int? EnPassantPawnId, Int3? EnPassantTarget, int? PendingPromotionPieceId);
 
@@ -56,6 +69,7 @@ public sealed class TerrariumModel
     public HashSet<Int3> MineFlags { get; private set; } = new();
     public HashSet<Int3> BotSafeMarks { get; private set; } = new();
     public HashSet<Int3> BotMineFlags { get; private set; } = new();
+    public List<ScanObservation> ScanObservations { get; private set; } = new();
     public bool MinesweeperEnabled { get; private set; }
     private HashSet<Int3> CavernProtected { get; set; } = new();
     private HashSet<Int3> DisturbedTerrain { get; set; } = new();
@@ -89,6 +103,7 @@ public sealed class TerrariumModel
         MineFlags = new HashSet<Int3>(MineFlags),
         BotSafeMarks = new HashSet<Int3>(BotSafeMarks),
         BotMineFlags = new HashSet<Int3>(BotMineFlags),
+        ScanObservations = ScanObservations.Select(observation => observation.Clone()).ToList(),
         CavernProtected = new HashSet<Int3>(CavernProtected),
         DisturbedTerrain = new HashSet<Int3>(DisturbedTerrain),
         MinesweeperEnabled = MinesweeperEnabled,
@@ -127,6 +142,7 @@ public sealed class TerrariumModel
         MineFlags = new HashSet<Int3>();
         BotSafeMarks = new HashSet<Int3>();
         BotMineFlags = new HashSet<Int3>();
+        ScanObservations = new List<ScanObservation>();
 
         Pieces = new List<ChessPiece>();
         _nextId = 1;
@@ -348,13 +364,9 @@ public sealed class TerrariumModel
         return result;
     }
 
-    public bool Scout(string pattern) => Scout(pattern, false);
-
-    internal bool ScoutForBot(string pattern) => Scout(pattern, true);
-
-    private bool Scout(string pattern, bool recordBotKnowledge)
+    public int? Scout(string pattern)
     {
-        var piece = Selected; if (!MinesweeperEnabled || piece is null || !ScoutPatterns(piece).Contains(pattern) || Winner is not null) return false;
+        var piece = Selected; if (!MinesweeperEnabled || piece is null || !ScoutPatterns(piece).Contains(pattern) || Winner is not null) return null;
         IEnumerable<Int3> directions = pattern switch
         {
             "orthogonal" =>
@@ -371,32 +383,18 @@ public sealed class TerrariumModel
                 select new Int3(x, y, z),
             _ => SpaceDiagonalDirections()
         };
-        var clues = new List<int>();
-        foreach (var direction in directions)
+        var cells = directions.Select(direction => piece.Position + direction)
+            .Where(IsInside).ToHashSet();
+        var mineCount = cells.Count(IsMine);
+        ScanObservations.RemoveAll(observation =>
+            observation.Side == piece.Side && observation.Origin == piece.Position && observation.Pattern == pattern);
+        ScanObservations.Add(new ScanObservation
         {
-            var p = piece.Position + direction;
-            if (p.X is < -1 or > 8 || p.Y is < -1 or > 8 || p.Z is < -1 or > 16) continue;
-            if (IsMine(p))
-            {
-                if (recordBotKnowledge && IsInside(p))
-                {
-                    BotSafeMarks.Remove(p);
-                    BotMineFlags.Add(p);
-                }
-            }
-            else
-            {
-                RevealedClues.Add(p);
-                if (recordBotKnowledge && IsInside(p) && IsSolid(p))
-                {
-                    BotMineFlags.Remove(p);
-                    BotSafeMarks.Add(p);
-                }
-                if (ClueAt(p) is { } clue) clues.Add(clue);
-            }
-        }
-        Message = $"{piece.Side} {piece.Kind} scouted {pattern}: {clues.Count} clues, {clues.Count(n => n > 0)} warned of mines (max {(clues.Count == 0 ? 0 : clues.Max())}). Scouting is free.";
-        return true;
+            Side = piece.Side, Origin = piece.Position, Pattern = pattern,
+            Cells = cells, MineCount = mineCount
+        });
+        Message = $"{piece.Side} {piece.Kind} scouted {pattern}: {mineCount} mine(s). Scouting is free.";
+        return mineCount;
     }
 
     private void AddPawnMoves(ChessPiece piece, List<Int3> result)
@@ -808,6 +806,8 @@ public sealed class TerrariumModel
     private void DetonateMine(Int3 p, List<string> events, int? sourcePieceId, Int3 contact)
     {
         Mines[p.X, p.Y, p.Z] = false; var casualties = 0;
+        foreach (var observation in ScanObservations.Where(observation => observation.Cells.Contains(p)))
+            observation.MineCount = Math.Max(0, observation.MineCount - 1);
         for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) for (var dz = -1; dz <= 1; dz++)
         {
             var blast = p + new Int3(dx, dy, dz); RevealedClues.Add(blast);
@@ -1098,6 +1098,7 @@ public sealed class TerrariumModel
         Solids = (bool[,,])snapshot.Solids.Clone();
         Mines = (bool[,,])snapshot.Mines.Clone();
         RevealedClues = new HashSet<Int3>(snapshot.RevealedClues);
+        ScanObservations = snapshot.ScanObservations.Select(observation => observation.Clone()).ToList();
         CavernProtected = new HashSet<Int3>(snapshot.CavernProtected);
         DisturbedTerrain = new HashSet<Int3>(snapshot.DisturbedTerrain);
         Pieces = snapshot.Pieces.Select(p => p.Clone()).ToList();
@@ -1116,7 +1117,8 @@ public sealed class TerrariumModel
     }
 
     private void PushHistory() => _history.Push(new Snapshot((bool[,,])Solids.Clone(), (bool[,,])Mines.Clone(),
-        new HashSet<Int3>(RevealedClues), new HashSet<Int3>(CavernProtected), new HashSet<Int3>(DisturbedTerrain), Pieces.Select(p => p.Clone()).ToList(), Turn, Plane, Winner, Message, SelectedId,
+        new HashSet<Int3>(RevealedClues), ScanObservations.Select(observation => observation.Clone()).ToList(),
+        new HashSet<Int3>(CavernProtected), new HashSet<Int3>(DisturbedTerrain), Pieces.Select(p => p.Clone()).ToList(), Turn, Plane, Winner, Message, SelectedId,
         EnPassantPawnId, EnPassantTarget, PendingPromotionPieceId));
 
     public ChessPiece? PieceAt(Int3 p) => Pieces.FirstOrDefault(piece => piece.Position == p);

@@ -330,19 +330,25 @@ test("bot search receives confirmed mines but never the hidden minefield", () =>
   assert.equal(visible.mineAt(2, 2, 0), false, "unobserved mine is stripped");
 });
 
-test("bot uses free piece scouting and visible clue deduction to place its own markers", () => {
+test("bot deduces markers from overlapping integer scans and visible clues", () => {
   const scouted = new TerrariumModel(false);
   scouted.solids = new Uint8Array(8 * 8 * 16);
   scouted.mines = new Uint8Array(8 * 8 * 16);
   scouted.revealedClues = new Set();scouted.botSafeMarks = new Set();scouted.botMineFlags = new Set();
   scouted.cavernProtected = new Set();scouted.disturbedTerrain = new Set();
   scouted.minesweeperEnabled = true;scouted.turn = Side.WHITE;scouted.plane = Plane.XY;scouted.winner = null;scouted.selectedId = null;
-  scouted.pieces = [tacticalPiece(1, Side.WHITE, Kind.ROOK, 3, 3, 1)];
+  scouted.pieces = [
+    tacticalPiece(1, Side.WHITE, Kind.ROOK, 3, 3, 1),
+    tacticalPiece(2, Side.WHITE, Kind.ROOK, 5, 3, 1),
+  ];
   scouted.setSolid(4, 3, 1, true);scouted.setSolid(3, 3, 2, true);
   scouted.mines[scouted.solidIndex(4, 3, 1)] = 1;
   prepareBotTurn(scouted);
-  assert.equal(scouted.botMineFlags.has("4,3,1"), true, "missing clue on a scanned cell identifies a mine");
-  assert.equal(scouted.botSafeMarks.has("3,3,2"), true, "safe scanned terrain is marked clear");
+  assert.equal(scouted.revealedClues.size,0,"integer scouting must not reveal specific cells");
+  assert.equal(scouted.scanObservations.length,2);
+  assert.ok(scouted.scanObservations.every(observation=>Number.isInteger(observation.mineCount)));
+  assert.equal(scouted.botMineFlags.has("4,3,1"), true, "overlapping totals prove the mine location");
+  assert.equal(scouted.botSafeMarks.has("3,3,2"), true, "overlapping totals prove the clear location");
 
   const deduced = new TerrariumModel(false);
   deduced.solids = new Uint8Array(8 * 8 * 16);deduced.mines = new Uint8Array(8 * 8 * 16);
@@ -447,21 +453,25 @@ test("a pawn-origin piece unlocks upgraded movement only after returning home", 
   assert.match(game.message,/returned home and awakened/);
 });
 
-test("scouting uses only a one-cell Rook, Bishop, or Trishop neighborhood", () => {
+test("scouting returns one integer for a plane-agnostic range-one pattern", () => {
   const game = new TerrariumModel(); game.setMinesweeperEnabled(true);
   const rook=game.pieces.find(piece=>piece.side===Side.WHITE&&piece.kind===Kind.ROOK);
   game.select(rook.id); const before=game.revealedClues.size;
-  assert.equal(game.scout("orthogonal"), true);
+  const rookResult=game.scout("orthogonal");
+  assert.equal(Number.isInteger(rookResult),true);
   assert.equal(game.turn, Side.WHITE);
   assert.equal(game.selectedId, rook.id);
-  assert.ok(game.revealedClues.size>=before);
-  assert.equal(game.revealedClues.has("0,0,9"),true,"one scan includes the XZ/YZ vertical axis");
-  assert.equal(game.revealedClues.has("2,0,8"),false,"a Rook scan must not extend to range two");
+  assert.equal(game.revealedClues.size,before,"scouting must not reveal cell-specific clues");
+  const rookObservation=game.scanObservations.at(-1);
+  assert.equal(rookObservation.mineCount,rookResult);
+  assert.equal(rookObservation.cells.includes("0,0,9"),true,"one scan includes the XZ/YZ vertical axis");
+  assert.equal(rookObservation.cells.includes("2,0,8"),false,"a Rook scan must not extend to range two");
   const queen=game.pieces.find(piece=>piece.side===Side.WHITE&&piece.kind===Kind.QUEEN);
   game.select(queen.id);game.setPlane(Plane.XY);
-  assert.equal(game.scout("plane-diagonal"),true);
-  assert.equal(game.revealedClues.has("4,0,9"),true,"one Bishop-pattern scan includes XZ diagonals");
-  assert.equal(game.revealedClues.has("3,1,9"),true,"one Bishop-pattern scan includes YZ diagonals");
+  assert.equal(Number.isInteger(game.scout("plane-diagonal")),true);
+  const bishopObservation=game.scanObservations.at(-1);
+  assert.equal(bishopObservation.cells.includes("4,0,9"),true,"one Bishop-pattern scan includes XZ diagonals");
+  assert.equal(bishopObservation.cells.includes("3,1,9"),true,"one Bishop-pattern scan includes YZ diagonals");
   const pawn=game.pieces.find(piece=>piece.side===Side.WHITE&&piece.kind===Kind.PAWN);
   const knight=game.pieces.find(piece=>piece.side===Side.WHITE&&piece.kind===Kind.KNIGHT);
   assert.deepEqual(game.scoutPatterns(pawn),[]);

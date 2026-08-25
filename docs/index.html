@@ -60,7 +60,7 @@
       <section id="scout-controls" class="scout-controls" hidden>
         <h2>SCOUT FOR MINES</h2>
         <div><select id="scout-pattern" aria-label="Movement pattern used to scout"></select><button id="scout-button">SCAN</button></div>
-        <p>Scan one cell away across all three planes in this piece's Rook, Bishop, or Trishop pattern. It is a free action.</p>
+        <p>Get one integer: the total mines one cell away across all three planes in this pattern. It is a free action.</p>
       </section>
 
       <section class="protocol">
@@ -98,7 +98,7 @@
         <section><b>03</b><h3>Isolate depth</h3><p>Middle-click, then scroll through adjacent two-layer windows.</p></section>
         <section><b>04</b><h3>Climb or excavate</h3><p>Pawns hop vertically anywhere; YZ climbs and upward digging still use walls.</p></section>
         <section><b>05</b><h3>Use gravity</h3><p>Falling pieces accelerate, bounce, crush, or fade on fatal impact.</p></section>
-        <section><b>06</b><h3>Optional minefield</h3><p>Scout for clues, then mark cells yourself or show the bot's blue clear and orange mine markers. The bot uses scouting and visible-clue deduction only.</p></section>
+        <section><b>06</b><h3>Optional minefield</h3><p>Each scan returns only a mine total for its range-one pattern. Combine overlapping totals to deduce cells; the bot follows the same information rule.</p></section>
       </div>
       <button class="primary-button" value="close">RETURN TO THE ARENA</button>
     </form>

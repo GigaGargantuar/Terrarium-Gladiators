@@ -41,7 +41,7 @@ public sealed class TerrariumBot
         {
             if (!position.Select(piece.Id)) continue;
             foreach (var pattern in position.ScoutPatterns(piece).ToList())
-                if (position.ScoutForBot(pattern)) scans++;
+                if (position.Scout(pattern) is not null) scans++;
         }
 
         DeduceMineKnowledge(position);
@@ -173,6 +173,16 @@ public sealed class TerrariumBot
                 else if (!knownSafe.Contains(cell)) cells.Add(cell);
             }
             var remaining = clue - adjacentKnownMines;
+            if (cells.Count > 0 && remaining >= 0 && remaining <= cells.Count)
+                constraints.Add(new ClueConstraint(cells, remaining));
+        }
+        foreach (var observation in position.ScanObservations)
+        {
+            var cells = observation.Cells
+                .Where(cell => cell.Z < 7 && position.IsSolid(cell) && !knownSafe.Contains(cell) && !knownMines.Contains(cell))
+                .ToHashSet();
+            var adjacentKnownMines = observation.Cells.Count(knownMines.Contains);
+            var remaining = observation.MineCount - adjacentKnownMines;
             if (cells.Count > 0 && remaining >= 0 && remaining <= cells.Count)
                 constraints.Add(new ClueConstraint(cells, remaining));
         }
