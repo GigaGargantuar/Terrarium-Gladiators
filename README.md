@@ -72,6 +72,7 @@ piece will break it; otherwise it is red.
 - Up / Down arrows: translate the camera along world Z
 - `Q`, `E`: rotate the camera by 90 degrees
 - Middle mouse button: toggle two-layer focus
+- Mouse wheel outside layer focus: zoom the orthographic camera in or out
 - Mouse wheel while layer focus is active: select adjacent windows from Z0–Z1
   through Z14–Z15; every other terrain layer is hidden. Chess pieces remain
   fully visible on every layer, and legal destinations remain visible.
@@ -157,7 +158,9 @@ piece will break it; otherwise it is red.
 The world renderer uses true 3D geometry rather than screen-space isometric
 tiles. Its orthographic camera begins side-aligned at 45 degrees, supports
 continuous horizontal orbit and a pole-safe 180-degree vertical orbit from
-underneath to overhead, and translates along world Z with the arrow keys.
+underneath to overhead, translates along world Z with the arrow keys, and zooms
+with the mouse wheel outside layer focus. Mine clues are centered in their cells
+and built from depth-tested cuboids whose local plane continuously faces the camera.
 It uses depth-tested cube faces, sculpted piece meshes, and true two-layer
 isolation. Piece falls animate with acceleration
 and a landing bounce; captures and crater changes are committed visually only

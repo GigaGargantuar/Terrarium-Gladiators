@@ -61,7 +61,7 @@ class MeshBuilder {
     this.quad(vec(mx.x,mx.y,mn.z),vec(mn.x,mx.y,mn.z),vec(mn.x,mx.y,mx.z),vec(mx.x,mx.y,mx.z),shade(col,.68),transparent);
   }
   planeBox(center,u,v,size,col){
-    const hu=mul(u,size.x/2),hv=mul(v,size.y/2),hw=vec(0,0,size.z/2),b00=sub(sub(sub(center,hu),hv),hw),b10=add(sub(sub(center,hv),hw),hu),b11=add(add(sub(center,hw),hu),hv),b01=add(sub(sub(center,hu),hw),hv),t00=add(b00,mul(hw,2)),t10=add(b10,mul(hw,2)),t11=add(b11,mul(hw,2)),t01=add(b01,mul(hw,2));
+    const hu=mul(u,size.x/2),hv=mul(v,size.y/2),hw=mul(norm(cross(u,v)),size.z/2),b00=sub(sub(sub(center,hu),hv),hw),b10=add(sub(sub(center,hv),hw),hu),b11=add(add(sub(center,hw),hu),hv),b01=add(sub(sub(center,hu),hw),hv),t00=add(b00,mul(hw,2)),t10=add(b10,mul(hw,2)),t11=add(b11,mul(hw,2)),t01=add(b01,mul(hw,2));
     this.quad(t00,t10,t11,t01,col);this.quad(b01,b11,b10,b00,shade(col,.48));this.quad(b10,b11,t11,t10,shade(col,.72));this.quad(b01,b00,t00,t01,shade(col,.58));this.quad(b00,b10,t10,t00,shade(col,.57));this.quad(b11,b01,t01,t11,shade(col,.68));
   }
   disc(center,radius,segments,col){for(let i=0;i<segments;i++){const a=i*TAU/segments,b=(i+1)*TAU/segments;this.tri(center,add(center,vec(Math.cos(a)*radius,Math.sin(a)*radius,0)),add(center,vec(Math.cos(b)*radius,Math.sin(b)*radius,0)),col,true)}}
@@ -93,7 +93,7 @@ export class WorldRenderer {
     if(!this.gl)throw new Error("WebGL 2 is required to render the 3D arena.");
     const gl=this.gl;this.program=program(gl);this.buffer=gl.createBuffer();
     this.locations={position:gl.getAttribLocation(this.program,"a_position"),color:gl.getAttribLocation(this.program,"a_color"),camera:gl.getUniformLocation(this.program,"u_camera"),right:gl.getUniformLocation(this.program,"u_right"),up:gl.getUniformLocation(this.program,"u_up"),forward:gl.getUniformLocation(this.program,"u_forward"),halfSize:gl.getUniformLocation(this.program,"u_halfSize"),depth:gl.getUniformLocation(this.program,"u_depth")};
-    this.yaw=0;this.elevation=45;this.heightOffset=0;this.layerFocus=false;this.focusLayer=8;this.width=1;this.height=1;this.pixelRatio=1;this.updateCamera();
+    this.yaw=0;this.elevation=45;this.heightOffset=0;this.zoom=1;this.layerFocus=false;this.focusLayer=8;this.width=1;this.height=1;this.pixelRatio=1;this.updateCamera();
     gl.useProgram(this.program);gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);gl.enableVertexAttribArray(this.locations.position);gl.vertexAttribPointer(this.locations.position,3,gl.FLOAT,false,28,0);gl.enableVertexAttribArray(this.locations.color);gl.vertexAttribPointer(this.locations.color,4,gl.FLOAT,false,28,12);
     gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.enable(gl.CULL_FACE);gl.cullFace(gl.BACK);gl.frontFace(gl.CCW);
   }
@@ -104,7 +104,7 @@ export class WorldRenderer {
   updateCamera(){
     this.target=vec(3.5,3.5,7.4+this.heightOffset);const distance=18.384777,elevation=Math.max(-90,Math.min(90,this.elevation))*Math.PI/180,horizontal=vec(Math.sin(this.yaw),-Math.cos(this.yaw),0),radial=add(mul(horizontal,Math.cos(elevation)),vec(0,0,Math.sin(elevation)));
     this.camera=add(this.target,mul(radial,distance));this.forward=mul(radial,-1);this.right=vec(Math.cos(this.yaw),Math.sin(this.yaw),0);this.up=norm(cross(this.right,this.forward));this.clueAway=mul(horizontal,-1);
-    this.orthoHeight=17.6;this.orthoWidth=this.orthoHeight*(this.width/this.height);
+    this.orthoHeight=17.6/Math.max(.55,Math.min(2.5,this.zoom));this.orthoWidth=this.orthoHeight*(this.width/this.height);
   }
   project(p){const d=sub(p,this.camera),x=dot(d,this.right)/(this.orthoWidth/2),y=dot(d,this.up)/(this.orthoHeight/2);return{x:(x*.5+.5)*this.width,y:(.5-y*.5)*this.height,depth:dot(d,this.forward)}}
   isTrue3DDestination(model,target){const piece=model.selected;if(!piece)return false;return target.x!==piece.position.x&&target.y!==piece.position.y&&target.z!==piece.position.z}
@@ -148,8 +148,8 @@ export class WorldRenderer {
     const mineAt=(x,y,z)=>x>=0&&x<8&&y>=0&&y<8&&z>=0&&z<16&&!!mines[model.solidIndex(x,y,z)],clueAt=(x,y,z)=>{if(x< -1||x>8||y< -1||y>8||z< -1||z>16||mineAt(x,y,z))return null;let count=0;for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)for(let dz=-1;dz<=1;dz++)if(mineAt(x+dx,y+dy,z+dz))count++;return count};
     const focusStart=Math.max(0,Math.min(14,this.focusLayer));
     for(const encoded of revealedClues??[]){const[x,y,z]=encoded.split(",").map(Number),clue=clueAt(x,y,z);if(clue==null||(!this.layerFocus&&clue===0)||(this.layerFocus&&(z<focusStart||z>focusStart+1))||this.solid(solids,x,y,z))continue;
-      const digits=String(clue),scale=digits.length>1?.68:1,col=clue>=4?color(255,102,122):clue>=2?color(255,209,102):clue===0?color(54,115,119):color(127,255,240),projectedForward=vec(this.forward.x,this.forward.y,0),away=dot(projectedForward,projectedForward)>.000001?norm(projectedForward):this.clueAway,right=norm(vec(this.right.x,this.right.y,0));
-      for(let index=0;index<digits.length;index++){const offset=(index-(digits.length-1)/2)*.38*scale;for(const id of glyphs[digits[index]]??[]){const[sx,sy,horizontal]=segments[id],center=add(vec(x,y,z+.055),add(mul(right,offset+sx*scale),mul(away,sy*scale))),size=horizontal?vec(.30*scale,.065*scale,.07):vec(.065*scale,.23*scale,.07);mesh.planeBox(center,right,away,size,col)}}
+      const digits=String(clue),scale=digits.length>1?.68:1,col=clue>=4?color(255,102,122):clue>=2?color(255,209,102):clue===0?color(54,115,119):color(127,255,240),right=this.right,up=this.up;
+      for(let index=0;index<digits.length;index++){const offset=(index-(digits.length-1)/2)*.38*scale;for(const id of glyphs[digits[index]]??[]){const[sx,sy,horizontal]=segments[id],center=add(vec(x,y,z+.49),add(mul(right,offset+sx*scale),mul(up,sy*scale))),size=horizontal?vec(.30*scale,.065*scale,.07):vec(.065*scale,.23*scale,.07);mesh.planeBox(center,right,up,size,col)}}
     }
   }
   buildPiece(mesh,rendered,selected){

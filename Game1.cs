@@ -225,7 +225,11 @@ public sealed class Game1 : Game
         if (mouse.MiddleButton == ButtonState.Pressed && _oldMouse.MiddleButton == ButtonState.Released)
             _depthFocus = !_depthFocus;
         var wheel = mouse.ScrollWheelValue - _oldMouse.ScrollWheelValue;
-        if (_depthFocus && wheel != 0) _selectedDepth = Math.Clamp(_selectedDepth + Math.Sign(wheel), 0, 14);
+        if (wheel != 0)
+        {
+            if (_depthFocus) _selectedDepth = Math.Clamp(_selectedDepth + Math.Sign(wheel), 0, 14);
+            else _world.Zoom = MathHelper.Clamp(_world.Zoom * MathF.Pow(1.12f, Math.Sign(wheel)), .55f, 2.5f);
+        }
         _world.LayerFocus = _depthFocus;
         _world.FocusLayer = _selectedDepth;
 
@@ -734,7 +738,7 @@ public sealed class Game1 : Game
         DrawWorldLabels();
         DrawText("TERRARIUM", new Vector2(1090, 27), new Color(82, 241, 216), .88f);
         DrawText("GLADIATORS", new Vector2(1090, 58), new Color(236, 226, 200), .88f);
-        DrawText($"TRUE 3D / {_world.ElevationDegrees:00}° / CAM Z {_world.CameraZ:00.0}", new Vector2(1092, 94), new Color(110, 145, 151), .43f);
+        DrawText($"TRUE 3D / {_world.ElevationDegrees:00}° / ZOOM {_world.Zoom * 100:000}%", new Vector2(1092, 94), new Color(110, 145, 151), .43f);
         DrawSmallButton(new Rectangle(1214, 110, 158, 25), $"M  MINES: {(_model.MinesweeperEnabled ? "ON" : "OFF")}");
         DrawText("?", new Vector2(1343, 31), new Color(113, 220, 209), .82f);
 
@@ -766,7 +770,7 @@ public sealed class Game1 : Game
 
         DrawText("Drag X: orbit   ·   Drag Y: −90°–90°", new Vector2(1090, 696), new Color(119, 150, 155), .40f);
         DrawText(_depthFocus ? $"MB  LAYER FOCUS: Z{_selectedDepth:00}–{_selectedDepth + 1:00}" : "MB  LAYER FOCUS: OFF", new Vector2(1090, 720), _depthFocus ? new Color(82, 241, 216) : new Color(119, 150, 155), .48f);
-        DrawText("Wheel  select depth   ·   H  rules", new Vector2(1090, 744), new Color(119, 150, 155), .43f);
+        DrawText(_depthFocus ? "Wheel  select depth   ·   H  rules" : "Wheel  zoom   ·   H  rules", new Vector2(1090, 744), new Color(119, 150, 155), .43f);
         DrawSmallButton(new Rectangle(1090, 774, 135, 43), "U  UNDO");
         DrawSmallButton(new Rectangle(1237, 774, 135, 43), "R  RESTART");
         for (var i = 0; i < _modeButtons.Length; i++)
@@ -813,9 +817,9 @@ public sealed class Game1 : Game
         var panel = new Rectangle(290, 120, 860, 660);
         _spriteBatch.Draw(_pixel, panel, new Color(16, 25, 39)); Border(panel, new Color(72, 224, 207), 2);
         DrawText("THE TERRARIUM IN TRUE 3D", new Vector2(350, 171), new Color(82, 241, 216), 1.05f);
-        DrawText("The orthographic camera starts at 45° with adjustable orbit, elevation, and Z.", new Vector2(350, 213), new Color(175, 192, 188), .56f);
+        DrawText("The orthographic camera starts at 45° with adjustable orbit, elevation, Z, and zoom.", new Vector2(350, 213), new Color(175, 192, 188), .56f);
         DrawHelpStep(1, 350, 283, "SELECT", "Click a sculpted piece, then choose a highlighted 3D destination.");
-        DrawHelpStep(2, 350, 365, "MOVE THE CAMERA", "Drag X to orbit and drag Y through a full 180° vertical arc. Up / Down shifts Z.");
+        DrawHelpStep(2, 350, 365, "MOVE THE CAMERA", "Drag X/Y to orbit, use Up / Down to shift Z, and scroll outside layer focus to zoom.");
         DrawHelpStep(3, 350, 447, "ISOLATE DEPTH", "Middle-click, then scroll through adjacent two-layer windows. Other layers are hidden.");
         DrawHelpStep(4, 350, 529, "CLIMB OR EXCAVATE", "Pawns hop vertically anywhere; YZ climbs and upward digging still use walls.");
         DrawHelpStep(5, 350, 611, "USE GRAVITY", "Falling pieces accelerate, bounce, crush, or fade on fatal impact.");

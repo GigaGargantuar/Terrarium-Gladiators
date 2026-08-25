@@ -20,10 +20,13 @@ public sealed class WorldRenderer : IDisposable
     private Matrix _view;
     private Matrix _projection;
     private Vector3 _cameraPosition;
+    private Vector3 _cameraRight;
+    private Vector3 _cameraUp;
 
     public float Yaw { get; set; }
     public float HeightOffset { get; set; }
     public float ElevationDegrees { get; set; } = 45f;
+    public float Zoom { get; set; } = 1f;
     public float CameraZ => _cameraPosition.Z;
     public bool LayerFocus { get; set; }
     public int FocusLayer { get; set; } = 8;
@@ -95,9 +98,10 @@ public sealed class WorldRenderer : IDisposable
         var right = new Vector3(MathF.Cos(Yaw), MathF.Sin(Yaw), 0);
         var radial = horizontal * MathF.Cos(elevation) + Vector3.UnitZ * MathF.Sin(elevation);
         _cameraPosition = target + radial * orbitDistance;
-        var cameraUp = Vector3.Normalize(Vector3.Cross(radial, right));
-        _view = Matrix.CreateLookAt(_cameraPosition, target, cameraUp);
-        var height = 17.6f;
+        _cameraRight = right;
+        _cameraUp = Vector3.Normalize(Vector3.Cross(radial, right));
+        _view = Matrix.CreateLookAt(_cameraPosition, target, _cameraUp);
+        var height = 17.6f / MathHelper.Clamp(Zoom, .55f, 2.5f);
         var width = height * _worldViewport.AspectRatio;
         _projection = Matrix.CreateOrthographic(width, height, .1f, 80f);
     }
@@ -211,10 +215,6 @@ public sealed class WorldRenderer : IDisposable
             var scale = digits.Length > 1 ? .68f : 1f;
             var color = clue >= 4 ? new Color(255, 102, 122) :
                 clue >= 2 ? new Color(255, 209, 102) : clue == 0 ? new Color(54, 115, 119) : new Color(127, 255, 240);
-            var away = new Vector3(3.5f - _cameraPosition.X, 3.5f - _cameraPosition.Y, 0);
-            away = away.LengthSquared() > .0001f ? Vector3.Normalize(away) :
-                new Vector3(-MathF.Sin(Yaw), MathF.Cos(Yaw), 0);
-            var right = new Vector3(away.Y, -away.X, 0);
             for (var index = 0; index < digits.Length; index++)
             {
                 var offset = (index - (digits.Length - 1) / 2f) * .38f * scale;
@@ -227,10 +227,11 @@ public sealed class WorldRenderer : IDisposable
                         'e' => (-.16f, -.13f, false), 'f' => (-.16f, .13f, false),
                         _ => (0f, 0f, true)
                     };
-                    var center = new Vector3(cell.X, cell.Y, cell.Z + .055f) + right * (offset + x * scale) + away * (y * scale);
+                    var center = new Vector3(cell.X, cell.Y, cell.Z + .49f) +
+                                 _cameraRight * (offset + x * scale) + _cameraUp * (y * scale);
                     var size = horizontal ? new Vector3(.30f * scale, .065f * scale, .07f) :
                         new Vector3(.065f * scale, .23f * scale, .07f);
-                    AddPlaneBox(center, right, away, size, color);
+                    AddPlaneBox(center, _cameraRight, _cameraUp, size, color);
                 }
             }
         }
@@ -256,7 +257,8 @@ public sealed class WorldRenderer : IDisposable
 
     private void AddPlaneBox(Vector3 center, Vector3 u, Vector3 v, Vector3 size, Color color)
     {
-        var hu = u * size.X / 2f; var hv = v * size.Y / 2f; var hw = Vector3.UnitZ * size.Z / 2f;
+        var hu = u * size.X / 2f; var hv = v * size.Y / 2f;
+        var hw = Vector3.Normalize(Vector3.Cross(u, v)) * size.Z / 2f;
         var b00 = center - hu - hv - hw; var b10 = center + hu - hv - hw;
         var b11 = center + hu + hv - hw; var b01 = center - hu + hv - hw;
         var t00 = b00 + hw * 2; var t10 = b10 + hw * 2; var t11 = b11 + hw * 2; var t01 = b01 + hw * 2;
