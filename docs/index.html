@@ -15,6 +15,7 @@
   <main id="game" class="game-frame">
     <section class="world" aria-label="3D game arena">
       <canvas id="board" tabindex="0" aria-label="Interactive three-dimensional Terrarium Gladiators arena"></canvas>
+      <div id="clue-layer" class="clue-layer" aria-hidden="true"></div>
       <div class="world-stars" aria-hidden="true"></div>
       <div id="thinking" class="thinking" hidden><i></i> BLACK BOT THINKING</div>
     </section>
@@ -33,6 +34,7 @@
           <option value="pvbot" selected>PLAYER VS BOT</option>
           <option value="botvbot">BOT VS BOT</option>
         </select>
+        <label class="addon-toggle"><input id="minesweeper-toggle" type="checkbox"> MINESWEEPER ADDON</label>
       </section>
 
       <section class="turn-block">
@@ -53,6 +55,12 @@
       <section>
         <h2>FIELD REPORT</h2>
         <div class="field-report"><p id="message">White to move. Select a piece.</p></div>
+      </section>
+
+      <section id="scout-controls" class="scout-controls" hidden>
+        <h2>SCOUT FOR MINES</h2>
+        <div><select id="scout-pattern" aria-label="Movement pattern used to scout"></select><button id="scout-button">SCAN</button></div>
+        <p>Scanning uses the chosen part of this piece's movement. It is a free action.</p>
       </section>
 
       <section class="protocol">
@@ -90,6 +98,7 @@
         <section><b>03</b><h3>Isolate depth</h3><p>Middle-click, then scroll through Z0–Z15 to inspect a single slice.</p></section>
         <section><b>04</b><h3>Climb or excavate</h3><p>Vertical pawns need walls: climb, capture, or dig straight up.</p></section>
         <section><b>05</b><h3>Use gravity</h3><p>Falling pieces accelerate, bounce, crush, or fade on fatal impact.</p></section>
+        <section><b>06</b><h3>Optional minefield</h3><p>Enable the addon before play. Select a piece and one of its movement components to reveal number clues. Digging or denting a mine blasts a 3×3×3 area.</p></section>
       </div>
       <button class="primary-button" value="close">RETURN TO THE ARENA</button>
     </form>
@@ -104,6 +113,7 @@
         <button data-kind="Rook">ROOK <kbd>R</kbd></button>
         <button data-kind="Bishop">BISHOP <kbd>B</kbd></button>
         <button data-kind="Knight">KNIGHT <kbd>N</kbd></button>
+        <button data-kind="Trishop">TRISHOP <kbd>T</kbd></button>
       </div>
     </div>
   </dialog>

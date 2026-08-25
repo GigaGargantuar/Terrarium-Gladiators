@@ -5,7 +5,7 @@ using System.Linq;
 namespace TerrariumGladiators;
 
 public enum Side { White, Black }
-public enum PieceKind { Pawn, Knight, Bishop, Rook, Queen, King }
+public enum PieceKind { Pawn, Knight, Bishop, Rook, Queen, King, Trishop }
 public enum MovementPlane { XY, XZ, YZ }
 public enum MoveOutcome { Safe, CraterSurvived, Excavation, Fatal }
 
@@ -23,10 +23,11 @@ public sealed class ChessPiece
     public PieceKind Kind { get; set; }
     public Int3 Position { get; set; }
     public bool HasMoved { get; set; }
+    public bool Promoted { get; set; }
 
     public ChessPiece Clone() => new()
     {
-        Id = Id, Side = Side, Kind = Kind, Position = Position, HasMoved = HasMoved
+        Id = Id, Side = Side, Kind = Kind, Position = Position, HasMoved = HasMoved, Promoted = Promoted
     };
 }
 
@@ -37,7 +38,7 @@ public sealed class TerrariumModel
 {
     private sealed record TowerTransport(List<(ChessPiece Piece, Int3 Destination)> Members, int KnockedOff);
 
-    private sealed record Snapshot(bool[,,] Solids, List<ChessPiece> Pieces, Side Turn,
+    private sealed record Snapshot(bool[,,] Solids, bool[,,] Mines, HashSet<Int3> RevealedClues, HashSet<Int3> CavernProtected, HashSet<Int3> DisturbedTerrain, List<ChessPiece> Pieces, Side Turn,
         MovementPlane Plane, Side? Winner, string Message, int? SelectedId,
         int? EnPassantPawnId, Int3? EnPassantTarget, int? PendingPromotionPieceId);
 
@@ -45,6 +46,11 @@ public sealed class TerrariumModel
     private int _nextId;
 
     public bool[,,] Solids { get; private set; } = new bool[8, 8, 16];
+    public bool[,,] Mines { get; private set; } = new bool[8, 8, 16];
+    public HashSet<Int3> RevealedClues { get; private set; } = new();
+    public bool MinesweeperEnabled { get; private set; }
+    private HashSet<Int3> CavernProtected { get; set; } = new();
+    private HashSet<Int3> DisturbedTerrain { get; set; } = new();
     public List<ChessPiece> Pieces { get; private set; } = new();
     public Side Turn { get; private set; }
     public MovementPlane Plane { get; private set; }
@@ -67,6 +73,11 @@ public sealed class TerrariumModel
     internal TerrariumModel CloneForSimulation() => new(false)
     {
         Solids = (bool[,,])Solids.Clone(),
+        Mines = (bool[,,])Mines.Clone(),
+        RevealedClues = new HashSet<Int3>(RevealedClues),
+        CavernProtected = new HashSet<Int3>(CavernProtected),
+        DisturbedTerrain = new HashSet<Int3>(DisturbedTerrain),
+        MinesweeperEnabled = MinesweeperEnabled,
         Pieces = Pieces.Select(piece => piece.Clone()).ToList(),
         Turn = Turn,
         Plane = Plane,
@@ -87,6 +98,9 @@ public sealed class TerrariumModel
         for (var z = 0; z < 8; z++)
             Solids[x, y, z] = true;
 
+        if (MinesweeperEnabled) GenerateMinefield();
+        else { Mines = new bool[8, 8, 16]; RevealedClues = new HashSet<Int3>(); CavernProtected = new HashSet<Int3>(); DisturbedTerrain = new HashSet<Int3>(); }
+
         Pieces = new List<ChessPiece>();
         _nextId = 1;
         AddArmy(Side.White, 0, 1);
@@ -101,6 +115,72 @@ public sealed class TerrariumModel
         Message = "White to move — select a piece, then a glowing cell.";
         LastFalls.Clear();
         _history.Clear();
+    }
+
+    public void SetMinesweeperEnabled(bool enabled)
+    {
+        MinesweeperEnabled = enabled;
+        Reset();
+    }
+
+    private void GenerateMinefield()
+    {
+        Mines = new bool[8, 8, 16];
+        RevealedClues = new HashSet<Int3>(); CavernProtected = new HashSet<Int3>(); DisturbedTerrain = new HashSet<Int3>();
+        var random = new Random(unchecked((int)0x54475233));
+        for (var x = 0; x < 8; x++) for (var y = 0; y < 8; y++) for (var z = 0; z < 7; z++)
+            Mines[x, y, z] = random.NextDouble() < .12;
+        for (var x = -1; x <= 8; x++) for (var y = -1; y <= 8; y++) for (var z = -1; z <= 16; z++)
+            if (x is < 0 or > 7 || y is < 0 or > 7 || z is < 0 or > 15) RevealedClues.Add(new Int3(x, y, z));
+        CarveZeroCaverns();
+        for (var x = 0; x < 8; x++) for (var y = 0; y < 8; y++) for (var z = 0; z < 8; z++)
+        {
+            if (!Solids[x, y, z]) continue;
+            for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) for (var dz = -1; dz <= 1; dz++)
+            {
+                var n = new Int3(x + dx, y + dy, z + dz);
+                if (n.X is >= 0 and < 8 && n.Y is >= 0 and < 8 && n.Z is >= 0 and < 7 && !Solids[n.X, n.Y, n.Z]) CavernProtected.Add(new Int3(x, y, z));
+            }
+        }
+    }
+
+    public bool IsMine(Int3 p) => IsInside(p) && Mines[p.X, p.Y, p.Z];
+
+    public int? ClueAt(Int3 p)
+    {
+        if (p.X is < -1 or > 8 || p.Y is < -1 or > 8 || p.Z is < -1 or > 16 || IsMine(p)) return null;
+        var count = 0;
+        for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) for (var dz = -1; dz <= 1; dz++)
+            if ((dx != 0 || dy != 0 || dz != 0) && IsMine(p + new Int3(dx, dy, dz))) count++;
+        return count;
+    }
+
+    private void CarveZeroCaverns()
+    {
+        var zeros = new HashSet<Int3>();
+        for (var x = 0; x < 8; x++) for (var y = 0; y < 8; y++) for (var z = 0; z < 7; z++)
+        {
+            var p = new Int3(x, y, z);
+            if (!IsMine(p) && ClueAt(p) == 0) zeros.Add(p);
+        }
+        var visited = new HashSet<Int3>();
+        foreach (var start in zeros)
+        {
+            if (!visited.Add(start)) continue;
+            var queue = new Queue<Int3>(); queue.Enqueue(start);
+            while (queue.TryDequeue(out var cell))
+            {
+                Solids[cell.X, cell.Y, cell.Z] = false; RevealedClues.Add(cell);
+                for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) for (var dz = -1; dz <= 1; dz++)
+                {
+                    if (dx == 0 && dy == 0 && dz == 0) continue;
+                    var n = cell + new Int3(dx, dy, dz);
+                    if (n.X is < 0 or > 7 || n.Y is < 0 or > 7 || n.Z is < 0 or >= 7 || IsMine(n)) continue;
+                    Solids[n.X, n.Y, n.Z] = false; RevealedClues.Add(n);
+                    if (zeros.Contains(n) && visited.Add(n)) queue.Enqueue(n);
+                }
+            }
+        }
     }
 
     private void AddArmy(Side side, int homeY, int pawnY)
@@ -148,13 +228,16 @@ public sealed class TerrariumModel
 
         var result = new List<Int3>();
         var (a, b) = PlaneAxes(Plane);
+        var tri = SpaceDiagonalDirections();
         switch (piece.Kind)
         {
             case PieceKind.Rook:
                 AddSliding(piece, result, [a, a * -1, b, b * -1]);
+                if (piece.Promoted) AddSliding(piece, result, tri);
                 break;
             case PieceKind.Bishop:
                 AddSliding(piece, result, [a + b, a + b * -1, a * -1 + b, a * -1 + b * -1]);
+                if (piece.Promoted) AddSliding(piece, result, tri);
                 break;
             case PieceKind.Queen:
                 AddSliding(piece, result,
@@ -162,6 +245,10 @@ public sealed class TerrariumModel
                     a, a * -1, b, b * -1,
                     a + b, a + b * -1, a * -1 + b, a * -1 + b * -1
                 ]);
+                if (piece.Promoted) AddSliding(piece, result, tri);
+                break;
+            case PieceKind.Trishop:
+                AddSliding(piece, result, tri);
                 break;
             case PieceKind.King:
                 AddStepping(piece, result,
@@ -169,6 +256,7 @@ public sealed class TerrariumModel
                     a, a * -1, b, b * -1,
                     a + b, a + b * -1, a * -1 + b, a * -1 + b * -1
                 ]);
+                if (piece.Promoted) AddStepping(piece, result, tri);
                 AddCastlingMoves(piece, result);
                 break;
             case PieceKind.Knight:
@@ -177,12 +265,64 @@ public sealed class TerrariumModel
                     a * 2 + b, a * 2 + b * -1, a * -2 + b, a * -2 + b * -1,
                     b * 2 + a, b * 2 + a * -1, b * -2 + a, b * -2 + a * -1
                 ]);
+                if (piece.Promoted) AddStepping(piece, result, SpaceKnightOffsets());
                 break;
             case PieceKind.Pawn:
                 AddPawnMoves(piece, result);
                 break;
         }
         return result.Distinct().Where(target => CanTransportTower(piece, target)).ToList();
+    }
+
+    private static Int3[] SpaceDiagonalDirections() =>
+        (from x in new[] { -1, 1 } from y in new[] { -1, 1 } from z in new[] { -1, 1 } select new Int3(x, y, z)).ToArray();
+
+    private static Int3[] SpaceKnightOffsets()
+    {
+        var result = new List<Int3>();
+        for (var axis = 0; axis < 3; axis++) foreach (var two in new[] { -2, 2 }) foreach (var a in new[] { -1, 1 }) foreach (var b in new[] { -1, 1 })
+        {
+            var values = new List<int> { a, b }; values.Insert(axis, two);
+            result.Add(new Int3(values[0], values[1], values[2]));
+        }
+        return result.ToArray();
+    }
+
+    public IReadOnlyList<string> ScoutPatterns(ChessPiece? piece = null)
+    {
+        piece ??= Selected; if (piece is null) return Array.Empty<string>(); var result = new List<string>();
+        if (piece.Kind == PieceKind.Pawn) { result.Add("advance"); if (Plane != MovementPlane.XZ) result.Add("capture"); }
+        if (piece.Kind is PieceKind.Rook or PieceKind.Queen or PieceKind.King) result.Add("orthogonal");
+        if (piece.Kind is PieceKind.Bishop or PieceKind.Queen or PieceKind.King) result.Add("plane-diagonal");
+        if (piece.Kind == PieceKind.Knight) result.Add("knight-012");
+        if (piece.Kind == PieceKind.Trishop || piece.Promoted && piece.Kind is PieceKind.Rook or PieceKind.Bishop or PieceKind.Queen or PieceKind.King) result.Add("space-diagonal");
+        if (piece.Kind == PieceKind.Knight && piece.Promoted) result.Add("knight-112");
+        return result;
+    }
+
+    public bool Scout(string pattern)
+    {
+        var piece = Selected; if (!MinesweeperEnabled || piece is null || !ScoutPatterns(piece).Contains(pattern) || Winner is not null) return false;
+        var (a, b) = PlaneAxes(Plane); IEnumerable<Int3> directions = pattern switch
+        {
+            "orthogonal" => [a, a * -1, b, b * -1],
+            "plane-diagonal" => [a + b, a + b * -1, a * -1 + b, a * -1 + b * -1],
+            "space-diagonal" => SpaceDiagonalDirections(), "knight-112" => SpaceKnightOffsets(),
+            "knight-012" => [a * 2 + b, a * 2 + b * -1, a * -2 + b, a * -2 + b * -1, b * 2 + a, b * 2 + a * -1, b * -2 + a, b * -2 + a * -1],
+            "capture" when Plane == MovementPlane.YZ => [new Int3(0, piece.Side == Side.White ? 1 : -1, 1), new Int3(0, piece.Side == Side.White ? 1 : -1, -1)],
+            "capture" => [new Int3(1, piece.Side == Side.White ? 1 : -1, 0), new Int3(-1, piece.Side == Side.White ? 1 : -1, 0)],
+            _ => [Plane == MovementPlane.XY ? new Int3(0, piece.Side == Side.White ? 1 : -1, 0) : new Int3(0, 0, 1)]
+        };
+        var leaper = pattern.StartsWith("knight") || piece.Kind == PieceKind.Pawn; var clues = new List<int>();
+        foreach (var direction in directions) for (var distance = 1; distance <= 18; distance++)
+        {
+            var p = piece.Position + direction * distance;
+            if (p.X is < -1 or > 8 || p.Y is < -1 or > 8 || p.Z is < -1 or > 16) break;
+            if (!IsMine(p)) { RevealedClues.Add(p); if (ClueAt(p) is { } clue) clues.Add(clue); }
+            if (leaper) break;
+        }
+        Message = $"{piece.Side} {piece.Kind} scouted {pattern}: {clues.Count} clues, {clues.Count(n => n > 0)} warned of mines (max {(clues.Count == 0 ? 0 : clues.Max())}). Scouting is free.";
+        return true;
     }
 
     private void AddPawnMoves(ChessPiece piece, List<Int3> result)
@@ -329,7 +469,7 @@ public sealed class TerrariumModel
             return new TowerTransport(members, leftBehind);
         }
 
-        if (piece.Kind is not (PieceKind.Rook or PieceKind.Bishop or PieceKind.Queen))
+        if (piece.Kind is not (PieceKind.Rook or PieceKind.Bishop or PieceKind.Queen or PieceKind.Trishop))
         {
             var obstructionIndex = tower.FindIndex(member =>
                 Obstructed(member, member.Position + delta, true));
@@ -456,9 +596,10 @@ public sealed class TerrariumModel
 
         if (excavating)
         {
-            Solids[target.X, target.Y, target.Z] = false;
+            RemoveTerrain(target, events);
             destination = MoveDestination(piece, target, true);
             events.Add($"{piece.Kind} excavated {CellName(target)}.");
+            if (!Pieces.Contains(piece)) { Message = string.Join("  ", events); return FinishMove(piece); }
         }
         else
         {
@@ -526,12 +667,15 @@ public sealed class TerrariumModel
         if (Winner is not null) return FinishMove(piece);
         ResolveGravity(events, releasesWallLatch ? piece.Id : null);
 
-        if (Pieces.Contains(piece) && piece.Kind == PieceKind.Pawn &&
-            ((piece.Side == Side.White && piece.Position.Y == 7) ||
-             (piece.Side == Side.Black && piece.Position.Y == 0)))
+        if (Pieces.Contains(piece) && piece.Kind == PieceKind.Pawn && OnEnemyBackRank(piece))
         {
             PendingPromotionPieceId = piece.Id;
-            events.Add("Pawn reached the far rank — choose a promotion.");
+            events.Add("Pawn reached the far rank — choose a true-3D promotion.");
+        }
+        foreach (var candidate in Pieces.Where(p => p.Kind != PieceKind.Pawn && !p.Promoted && OnEnemyBackRank(p)))
+        {
+            candidate.Promoted = true;
+            events.Add($"{candidate.Side} {candidate.Kind} awakened its true-3D movement.");
         }
 
         var moved = excavating
@@ -551,15 +695,40 @@ public sealed class TerrariumModel
 
     public bool Promote(PieceKind kind)
     {
-        if (kind is not (PieceKind.Queen or PieceKind.Rook or PieceKind.Bishop or PieceKind.Knight) ||
+        if (kind is not (PieceKind.Queen or PieceKind.Rook or PieceKind.Bishop or PieceKind.Knight or PieceKind.Trishop) ||
             PendingPromotionPieceId is not { } pieceId) return false;
         var pawn = Pieces.FirstOrDefault(piece => piece.Id == pieceId && piece.Kind == PieceKind.Pawn);
         if (pawn is null) return false;
         pawn.Kind = kind;
+        pawn.Promoted = true;
         PendingPromotionPieceId = null;
-        Message = $"{pawn.Side} Pawn promoted to {kind}.";
+        Message = $"{pawn.Side} Pawn promoted to {kind} with true-3D movement.";
         if (Winner is null) Turn = Turn == Side.White ? Side.Black : Side.White;
         return true;
+    }
+
+    private static bool OnEnemyBackRank(ChessPiece piece) => piece.Side == Side.White ? piece.Position.Y == 7 : piece.Position.Y == 0;
+
+    private bool RemoveTerrain(Int3 p, List<string> events)
+    {
+        if (!IsSolid(p)) return false;
+        Solids[p.X, p.Y, p.Z] = false; DisturbedTerrain.Add(p); RevealedClues.Add(p);
+        if (IsMine(p)) DetonateMine(p, events);
+        return true;
+    }
+
+    private void DetonateMine(Int3 p, List<string> events)
+    {
+        Mines[p.X, p.Y, p.Z] = false; var casualties = 0;
+        for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) for (var dz = -1; dz <= 1; dz++)
+        {
+            var blast = p + new Int3(dx, dy, dz); RevealedClues.Add(blast);
+            foreach (var victim in Pieces.Where(piece => piece.Position == blast).ToList())
+            {
+                DestroyPiece(victim, $"{victim.Kind} was caught in a mine blast."); casualties++;
+            }
+        }
+        events.Add($"Mine detonated at {CellName(p)}: {casualties} piece(s) hit; terrain outside the dent was untouched.");
     }
 
     private void ResolveGravity(List<string> events, int? releasedPawnId = null)
@@ -610,7 +779,7 @@ public sealed class TerrariumModel
                         var impactBaseZ = Math.Max(0, supportZ);
                         if (supportZ >= 0 && Solids[x, y, supportZ])
                         {
-                            Solids[x, y, supportZ] = false;
+                            RemoveTerrain(new Int3(x, y, supportZ), events);
                             events.Add($"Impact shattered cube {CellName(new Int3(x, y, supportZ))}!");
                         }
                         else if (impactPiece is not null)
@@ -630,7 +799,7 @@ public sealed class TerrariumModel
                             stationaryTower.RemoveAt(0);
                             DestroyPiece(crushedBottom, $"The bottom {crushedBottom.Kind} was squashed beneath its tower!");
                             events.Add($"{crushedBottom.Side} {crushedBottom.Kind} at the tower base was squashed!");
-                            var craterZ = ExcavateCraterBelow(x, y, crushedBottom.Position.Z - 1);
+                            var craterZ = ExcavateCraterBelow(x, y, crushedBottom.Position.Z - 1, events);
                             var settledBaseZ = craterZ >= 0 ? craterZ : crushedBottom.Position.Z;
                             if (craterZ >= 0)
                             {
@@ -704,8 +873,11 @@ public sealed class TerrariumModel
                 supportedBelow |= Solids[x + dx, y + dy, z - 1];
             }
             if (!flatPatch || supportedBelow) continue;
+            var center = new Int3(x, y, z);
+            var disturbedNearby = DisturbedTerrain.Any(p => Math.Max(Math.Max(Math.Abs(p.X - x), Math.Abs(p.Y - y)), Math.Abs(p.Z - z)) <= 1);
+            if (CavernProtected.Contains(center) && !disturbedNearby) continue;
 
-            Solids[x, y, z] = false;
+            RemoveTerrain(center, events);
             var hitZ = -1;
             ChessPiece? hitPiece = null;
             for (var scan = z - 1; scan >= 0; scan--)
@@ -723,7 +895,7 @@ public sealed class TerrariumModel
             {
                 DestroyPiece(hitPiece, $"{hitPiece.Kind} was squashed by a falling cube cell.");
                 events.Add($"Falling terrain squashed {hitPiece.Side} {hitPiece.Kind}!");
-                var craterZ = ExcavateCraterBelow(x, y, hitZ - 1);
+                var craterZ = ExcavateCraterBelow(x, y, hitZ - 1, events);
                 landingZ = craterZ >= 0 ? craterZ : hitZ;
                 if (craterZ >= 0)
                     events.Add($"The crushed piece left a crater at {CellName(new Int3(x, y, craterZ))}!");
@@ -739,12 +911,12 @@ public sealed class TerrariumModel
         return false;
     }
 
-    private int ExcavateCraterBelow(int x, int y, int startZ)
+    private int ExcavateCraterBelow(int x, int y, int startZ, List<string> events)
     {
         for (var z = startZ; z >= 0; z--)
         {
             if (!Solids[x, y, z]) continue;
-            Solids[x, y, z] = false;
+            RemoveTerrain(new Int3(x, y, z), events);
             return z;
         }
         return -1;
@@ -803,6 +975,10 @@ public sealed class TerrariumModel
         if (_history.Count == 0) return false;
         var snapshot = _history.Pop();
         Solids = (bool[,,])snapshot.Solids.Clone();
+        Mines = (bool[,,])snapshot.Mines.Clone();
+        RevealedClues = new HashSet<Int3>(snapshot.RevealedClues);
+        CavernProtected = new HashSet<Int3>(snapshot.CavernProtected);
+        DisturbedTerrain = new HashSet<Int3>(snapshot.DisturbedTerrain);
         Pieces = snapshot.Pieces.Select(p => p.Clone()).ToList();
         Turn = snapshot.Turn;
         Plane = snapshot.Plane;
@@ -816,8 +992,8 @@ public sealed class TerrariumModel
         return true;
     }
 
-    private void PushHistory() => _history.Push(new Snapshot((bool[,,])Solids.Clone(),
-        Pieces.Select(p => p.Clone()).ToList(), Turn, Plane, Winner, Message, SelectedId,
+    private void PushHistory() => _history.Push(new Snapshot((bool[,,])Solids.Clone(), (bool[,,])Mines.Clone(),
+        new HashSet<Int3>(RevealedClues), new HashSet<Int3>(CavernProtected), new HashSet<Int3>(DisturbedTerrain), Pieces.Select(p => p.Clone()).ToList(), Turn, Plane, Winner, Message, SelectedId,
         EnPassantPawnId, EnPassantTarget, PendingPromotionPieceId));
 
     public ChessPiece? PieceAt(Int3 p) => Pieces.FirstOrDefault(piece => piece.Position == p);
@@ -882,7 +1058,7 @@ public sealed class TerrariumModel
         {
             PieceKind.Knight => piece.Position,
             PieceKind.King => target,
-            PieceKind.Rook or PieceKind.Bishop or PieceKind.Queen => target - StepToward(piece.Position, target),
+            PieceKind.Rook or PieceKind.Bishop or PieceKind.Queen or PieceKind.Trishop => target - StepToward(piece.Position, target),
             _ => piece.Position
         };
     }

@@ -21,6 +21,7 @@ public sealed class TerrariumBot
             [PieceKind.Pawn] = 100,
             [PieceKind.Knight] = 320,
             [PieceKind.Bishop] = 330,
+            [PieceKind.Trishop] = 360,
             [PieceKind.Rook] = 500,
             [PieceKind.Queen] = 900,
             [PieceKind.King] = 20_000

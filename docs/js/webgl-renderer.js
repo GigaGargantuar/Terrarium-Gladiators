@@ -143,6 +143,7 @@ export class WorldRenderer {
     else if(p.kind===Kind.ROOK){mesh.cylinder(add(crown,vec(0,0,-.03)),.22,.26,12,body,transparent);for(let i=0;i<4;i++){const a=i*Math.PI/2;mesh.box(add(crown,vec(Math.cos(a)*.15,Math.sin(a)*.15,.17)),vec(.14,.14,.16),trim,transparent)}}
     else if(p.kind===Kind.KNIGHT){mesh.sphere(add(crown,vec(0,0,.02)),.19,9,7,body,transparent);mesh.cone(add(crown,vec(0,-.04,.05)),.18,.42,12,body,transparent,-.72);mesh.sphere(add(crown,vec(0,-.24,.31)),.12,9,7,body,transparent)}
     else if(p.kind===Kind.BISHOP){mesh.sphere(crown,.19,12,8,body,transparent);mesh.cone(add(crown,vec(0,0,.16)),.12,.30,12,trim,transparent)}
+    else if(p.kind===Kind.TRISHOP){mesh.sphere(crown,.18,12,8,body,transparent);for(let i=0;i<3;i++){const a=i*TAU/3;mesh.cone(add(crown,vec(Math.cos(a)*.12,Math.sin(a)*.12,.10)),.08,.30,8,trim,transparent)}}
     else if(p.kind===Kind.QUEEN){mesh.cone(add(crown,vec(0,0,-.02)),.25,.28,16,body,transparent);for(let i=0;i<5;i++){const a=i*TAU/5;mesh.sphere(add(crown,vec(Math.cos(a)*.20,Math.sin(a)*.20,.27)),.065,7,5,trim,transparent)}}
     else if(p.kind===Kind.KING){mesh.sphere(crown,.18,12,8,body,transparent);mesh.box(add(crown,vec(0,0,.28)),vec(.07,.07,.33),trim,transparent);mesh.box(add(crown,vec(0,0,.34)),vec(.28,.07,.07),trim,transparent)}
   }

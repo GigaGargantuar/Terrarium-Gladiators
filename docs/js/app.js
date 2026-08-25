@@ -2,7 +2,7 @@ import { TerrariumModel, Side, Kind, Plane } from "./engine.js";
 import { WorldRenderer } from "./webgl-renderer.js";
 
 const model=new TerrariumModel(),canvas=document.querySelector("#board"),renderer=new WorldRenderer(canvas);
-const ui={turn:document.querySelector("#turn-label"),message:document.querySelector("#message"),selected:document.querySelector("#selected-piece"),planes:[...document.querySelectorAll("[data-plane]")],mode:document.querySelector("#mode-select"),role:document.querySelector("#role-note"),layer:document.querySelector("#layer-toggle"),depth:document.querySelector("#depth-slider"),depthOut:document.querySelector("#depth-output"),camera:document.querySelector("#camera-readout"),help:document.querySelector("#help-dialog"),promotion:document.querySelector("#promotion-dialog"),thinking:document.querySelector("#thinking")};
+const ui={turn:document.querySelector("#turn-label"),message:document.querySelector("#message"),selected:document.querySelector("#selected-piece"),planes:[...document.querySelectorAll("[data-plane]")],mode:document.querySelector("#mode-select"),role:document.querySelector("#role-note"),mine:document.querySelector("#minesweeper-toggle"),clues:document.querySelector("#clue-layer"),scout:document.querySelector("#scout-controls"),scoutPattern:document.querySelector("#scout-pattern"),scoutButton:document.querySelector("#scout-button"),layer:document.querySelector("#layer-toggle"),depth:document.querySelector("#depth-slider"),depthOut:document.querySelector("#depth-output"),camera:document.querySelector("#camera-readout"),help:document.querySelector("#help-dialog"),promotion:document.querySelector("#promotion-dialog"),thinking:document.querySelector("#thinking")};
 let botWorker=null,botTimer=null,positionVersion=0,dirty=true,lastTime=performance.now(),pointerStart=null,pointerLast=null,dragging=false;
 const MatchMode=Object.freeze({PVP:"pvp",PVBOT:"pvbot",BOTVBOT:"botvbot"});
 let matchMode=MatchMode.PVBOT,falls=[],preImpactSolids=null,preImpactPieces=null,impactTime=0,pendingBot=false;
@@ -56,16 +56,18 @@ function updateTransition(dt){if(!transitionActive())return;for(const animation 
 
 function syncUI(){
   const botThinking=!ui.thinking.hidden;ui.turn.textContent=model.winner?`${sideName(model.winner)} WINS`:botThinking?`${sideName(model.turn)} BOT THINKING`:`${sideName(model.turn)} TO MOVE`;ui.turn.classList.toggle("black",model.turn===Side.BLACK&&!model.winner);
-  ui.message.textContent=model.message;const piece=model.selected;ui.selected.textContent=piece?`${piece.kind}  ·  ${TerrariumModel.cellName(piece.position)}`:"No piece selected";
+  ui.message.textContent=model.message;const piece=model.selected;ui.selected.textContent=piece?`${piece.kind}${piece.promoted?" ✦":""}  ·  ${TerrariumModel.cellName(piece.position)}`:"No piece selected";
   ui.thinking.innerHTML=`<i></i> ${sideName(model.turn)} BOT THINKING`;
   ui.role.textContent=matchMode===MatchMode.PVP?"Same-device PvP · pass control each turn":matchMode===MatchMode.BOTVBOT?"Bot vs Bot · spectator mode":"You are White · Black is the bot";
   for(const button of ui.planes)button.setAttribute("aria-checked",String(button.dataset.plane===model.plane));
+  const patterns=model.minesweeperEnabled&&piece?model.scoutPatterns(piece):[],previous=ui.scoutPattern.value;ui.scout.hidden=!patterns.length;ui.scoutPattern.replaceChildren(...patterns.map(pattern=>{const option=document.createElement("option");option.value=pattern;option.textContent=pattern.replaceAll("-"," ").toUpperCase();return option}));if(patterns.includes(previous))ui.scoutPattern.value=previous;
   ui.camera.textContent=`TRUE 3D / ${Math.round(renderer.elevation).toString().padStart(2,"0")}° / CAM Z ${renderer.camera.z.toFixed(1).padStart(4,"0")}`;
   if(model.pendingPromotionPieceId!=null&&isHumanTurn()&&!transitionActive()&&!ui.promotion.open)ui.promotion.showModal();dirty=true;
 }
 function draw(){
-  renderer.render(model,preImpactSolids??model.solids,renderPieces(),transitionActive()?[]:model.selected?model.legalMoves():[]);dirty=false;
+  renderer.render(model,preImpactSolids??model.solids,renderPieces(),transitionActive()?[]:model.selected?model.legalMoves():[]);renderClues();dirty=false;
 }
+function renderClues(){if(!model.minesweeperEnabled){ui.clues.replaceChildren();return}const nodes=[];for(const encoded of model.revealedClues){const[x,y,z]=encoded.split(",").map(Number),clue=model.clueAt({x,y,z});if(clue==null||(!renderer.layerFocus&&clue===0)||(renderer.layerFocus&&z!==renderer.focusLayer))continue;const screen=renderer.project({x,y,z:z+.5});if(screen.x<0||screen.x>renderer.width||screen.y<0||screen.y>renderer.height)continue;const marker=document.createElement("span");marker.className=`mine-clue c${Math.min(8,clue)}`;marker.textContent=clue;marker.style.left=`${screen.x}px`;marker.style.top=`${screen.y}px`;nodes.push(marker)}ui.clues.replaceChildren(...nodes)}
 function frame(now){const dt=Math.min(.05,(now-lastTime)/1000);lastTime=now;updateTransition(dt);if(dirty)draw();requestAnimationFrame(frame)}
 requestAnimationFrame(frame);new ResizeObserver(()=>{dirty=true}).observe(canvas);
 
@@ -80,7 +82,7 @@ function setMatchMode(mode){
 function undo(){if(transitionActive())return;clearTimeout(botTimer);pendingBot=false;ui.thinking.hidden=true;if(!model.undo())return;if(matchMode===MatchMode.PVBOT&&model.turn===Side.BLACK&&!model.winner)model.undo();positionVersion++;startBotWorker();syncUI();if(isBotTurn())queueBot()}
 function queueBot(){
   if(!isBotTurn()||model.winner||model.pendingPromotionPieceId!=null||transitionActive())return;const version=++positionVersion;ui.thinking.hidden=false;syncUI();
-  botTimer=setTimeout(()=>{if(version!==positionVersion||!isBotTurn())return;const state=model.cloneForSimulation();botWorker.postMessage({version,state:{solids:[...state.solids],pieces:state.pieces,turn:state.turn,plane:state.plane,winner:state.winner,message:state.message,selectedId:state.selectedId,enPassantPawnId:state.enPassantPawnId,enPassantTarget:state.enPassantTarget,pendingPromotionPieceId:state.pendingPromotionPieceId,nextId:state.nextId}})},460);
+  botTimer=setTimeout(()=>{if(version!==positionVersion||!isBotTurn())return;const state=model.cloneForSimulation();botWorker.postMessage({version,state:{solids:[...state.solids],mines:[...state.mines],revealedClues:[...state.revealedClues],cavernProtected:[...state.cavernProtected],disturbedTerrain:[...state.disturbedTerrain],minesweeperEnabled:state.minesweeperEnabled,pieces:state.pieces,turn:state.turn,plane:state.plane,winner:state.winner,message:state.message,selectedId:state.selectedId,enPassantPawnId:state.enPassantPawnId,enPassantTarget:state.enPassantTarget,pendingPromotionPieceId:state.pendingPromotionPieceId,nextId:state.nextId}})},460);
 }
 function executeMove(target){
   const moving=model.selected;if(!moving)return;const beforeSolids=model.solids.slice(),beforePieces=clonePieces(model.pieces),from={...moving.position};
@@ -104,9 +106,11 @@ function toggleLayer(){renderer.layerFocus=!renderer.layerFocus;ui.layer.setAttr
 for(const button of ui.planes)button.addEventListener("click",()=>setPlane(button.dataset.plane));ui.layer.addEventListener("click",toggleLayer);ui.depth.addEventListener("input",()=>{renderer.focusLayer=Number(ui.depth.value);ui.depthOut.value=`Z${String(renderer.focusLayer).padStart(2,"0")}`;ui.layer.querySelector("b").textContent=`MB  LAYER FOCUS: Z${String(renderer.focusLayer).padStart(2,"0")}`;dirty=true});
 document.querySelector("#undo-button").addEventListener("click",undo);document.querySelector("#restart-button").addEventListener("click",reset);document.querySelector("#help-button").addEventListener("click",()=>ui.help.showModal());
 ui.mode.addEventListener("change",()=>setMatchMode(ui.mode.value));
+ui.mine.addEventListener("change",()=>{model.minesweeperEnabled=ui.mine.checked;reset()});
+ui.scoutButton.addEventListener("click",()=>{if(!isHumanTurn()||transitionActive()||!model.scout(ui.scoutPattern.value))return;positionVersion++;syncUI()});
 for(const button of document.querySelectorAll("[data-kind]"))button.addEventListener("click",()=>{if(model.promote(button.dataset.kind)){ui.promotion.close();positionVersion++;pendingBot=false;syncUI();if(isBotTurn())queueBot()}});
 window.addEventListener("keydown",e=>{
-  if(ui.help.open){if(["h","Escape"].includes(e.key))ui.help.close();return}const key=e.key.toLowerCase();if(ui.promotion.open){const promotion={q:Kind.QUEEN,r:Kind.ROOK,b:Kind.BISHOP,n:Kind.KNIGHT}[key];if(promotion)document.querySelector(`[data-kind="${promotion}"]`).click();return}
+  if(ui.help.open){if(["h","Escape"].includes(e.key))ui.help.close();return}const key=e.key.toLowerCase();if(ui.promotion.open){const promotion={q:Kind.QUEEN,r:Kind.ROOK,b:Kind.BISHOP,n:Kind.KNIGHT,t:Kind.TRISHOP}[key];if(promotion)document.querySelector(`[data-kind="${promotion}"]`).click();return}
   if(["1","2","3"," ","tab","q","e","u","r","h","m","arrowup","arrowdown"].includes(key))e.preventDefault();
   if(key==="1")setPlane(Plane.XY);else if(key==="2")setPlane(Plane.XZ);else if(key==="3")setPlane(Plane.YZ);else if(key===" "){const p=[Plane.XY,Plane.XZ,Plane.YZ];setPlane(p[(p.indexOf(model.plane)+1)%3])}else if(key==="tab")cyclePiece(e.shiftKey);else if(key==="u")undo();else if(key==="r")reset();else if(key==="h")ui.help.showModal();else if(key==="m")toggleLayer();else if(key==="q"||key==="e"){renderer.yaw+=(key==="e"?1:-1)*Math.PI/2;renderer.updateCamera();syncUI()}else if(key==="arrowup"||key==="arrowdown"){renderer.heightOffset=Math.max(-7,Math.min(7,renderer.heightOffset+(key==="arrowdown"?1:-1)));renderer.updateCamera();syncUI()}else if(key==="escape"){model.clearSelection();syncUI()}
 });

@@ -250,3 +250,78 @@ test("bot move selection supports White for Bot vs Bot mode", () => {
 
   assert.ok(chooseBotMove(game, 4));
 });
+
+test("the Minesweeper addon is opt-in and builds a safe-top clue field", () => {
+  const game = new TerrariumModel();
+  assert.equal(game.minesweeperEnabled, false);
+  assert.equal(game.mines.some(Boolean), false);
+  assert.equal(game.revealedClues.size, 0);
+
+  game.setMinesweeperEnabled(true);
+  assert.equal(game.minesweeperEnabled, true);
+  assert.ok(game.mines.some(Boolean));
+  for (let x=0;x<8;x++) for (let y=0;y<8;y++) {
+    assert.equal(game.mineAt(x,y,7), false, "top terrain layer must be mine-free");
+    assert.equal(game.solidAt(x,y,7), true, "caverns must not breach the starting surface");
+  }
+  assert.ok([...game.revealedClues].some(cell => cell.startsWith("-1,")), "outer clue shell is revealed");
+  let carved=0;for(let x=0;x<8;x++)for(let y=0;y<8;y++)for(let z=0;z<7;z++)if(!game.solidAt(x,y,z))carved++;
+  assert.ok(carved>0, "zero regions carve pregame caverns");
+  assert.equal(game.resolveTerrainGravity([]),false,"pregame cavern ceilings stay stable until nearby disturbance");
+});
+
+test("promoted movement is true 3D and independent of movement plane", () => {
+  const game = tacticalPosition([
+    {...tacticalPiece(1, Side.WHITE, Kind.BISHOP, 3, 3, 3), promoted:true},
+    tacticalPiece(2, Side.WHITE, Kind.KING, 7, 0),
+    tacticalPiece(3, Side.BLACK, Kind.KING, 7, 7),
+  ], Side.WHITE);
+  const destination={x:4,y:4,z:4};
+  for (const plane of Object.values(Plane)) {
+    game.setPlane(plane);
+    assert.ok(game.legalMoves(game.pieces[0]).some(move =>
+      move.x===destination.x&&move.y===destination.y&&move.z===destination.z));
+  }
+  game.pieces[0].promoted=false;
+  game.setPlane(Plane.XY);
+  assert.equal(game.legalMoves(game.pieces[0]).some(move => move.z!==3), false);
+});
+
+test("Trishop is a pawn-only underpromotion with (1,1,1) sliding", () => {
+  const game = tacticalPosition([
+    tacticalPiece(1, Side.WHITE, Kind.PAWN, 2, 7),
+    tacticalPiece(2, Side.WHITE, Kind.KING, 7, 0),
+    tacticalPiece(3, Side.BLACK, Kind.KING, 7, 7),
+  ], Side.WHITE);
+  game.pendingPromotionPieceId=1;
+  assert.equal(game.promote(Kind.TRISHOP), true);
+  assert.equal(game.pieces[0].promoted, true);
+  assert.equal(game.pieces[0].kind, Kind.TRISHOP);
+  assert.ok(game.legalMoves(game.pieces[0]).some(move => move.x===3&&move.y===6&&move.z===1));
+});
+
+test("scouting reveals a selected movement component without spending the turn", () => {
+  const game = new TerrariumModel(); game.setMinesweeperEnabled(true);
+  const rook=game.pieces.find(piece=>piece.side===Side.WHITE&&piece.kind===Kind.ROOK);
+  game.select(rook.id); const before=game.revealedClues.size;
+  assert.equal(game.scout("orthogonal"), true);
+  assert.equal(game.turn, Side.WHITE);
+  assert.equal(game.selectedId, rook.id);
+  assert.ok(game.revealedClues.size>=before);
+  assert.match(game.message,/Scouting is free/);
+});
+
+test("excavating a mine blasts pieces in 3x3x3 without collateral terrain damage", () => {
+  const game=tacticalPosition([
+    tacticalPiece(1,Side.WHITE,Kind.ROOK,3,3,4),
+    tacticalPiece(2,Side.BLACK,Kind.KNIGHT,4,4,3),
+    tacticalPiece(3,Side.BLACK,Kind.KING,7,7),
+  ],Side.WHITE);
+  game.minesweeperEnabled=true;game.mines=new Uint8Array(8*8*16);game.revealedClues=new Set();
+  game.setSolid(3,3,3,true);game.setSolid(2,3,3,true);game.mines[game.solidIndex(3,3,3)]=1;
+  const events=[];game.removeTerrain({x:3,y:3,z:3},events);
+  assert.equal(game.pieces.some(piece=>piece.id===1||piece.id===2),false);
+  assert.equal(game.solidAt(2,3,3),true,"blast must not remove neighboring terrain");
+  assert.equal(game.mineAt(3,3,3),false);
+  assert.match(events.join(" "),/Mine detonated/);
+});

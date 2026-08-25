@@ -250,6 +250,14 @@ public sealed class WorldRenderer : IDisposable
                 AddSphere(crown, .19f, 12, 8, body, transparent);
                 AddCone(crown + new Vector3(0, 0, .16f), .12f, .30f, 12, trim, transparent);
                 break;
+            case PieceKind.Trishop:
+                AddSphere(crown, .18f, 12, 8, body, transparent);
+                for (var i = 0; i < 3; i++)
+                {
+                    var a = i * MathHelper.TwoPi / 3f;
+                    AddCone(crown + new Vector3(MathF.Cos(a) * .12f, MathF.Sin(a) * .12f, .10f), .08f, .30f, 8, trim, transparent);
+                }
+                break;
             case PieceKind.Queen:
                 AddCone(crown - new Vector3(0, 0, .02f), .25f, .28f, 16, body, transparent);
                 for (var i = 0; i < 5; i++)

@@ -55,6 +55,7 @@ public sealed class Game1 : Game
     private int _positionVersion;
     private int _botSearchVersion;
     private MatchMode _matchMode = MatchMode.PlayerVsBot;
+    private int _scoutPatternIndex;
 
     private readonly Rectangle[] _planeButtons =
     {
@@ -62,11 +63,11 @@ public sealed class Game1 : Game
     };
     private readonly Rectangle[] _promotionButtons =
     {
-        new(208, 476, 145, 62), new(371, 476, 145, 62),
-        new(534, 476, 145, 62), new(697, 476, 145, 62)
+        new(142, 476, 135, 62), new(293, 476, 135, 62), new(444, 476, 135, 62),
+        new(595, 476, 135, 62), new(746, 476, 135, 62)
     };
     private static readonly PieceKind[] PromotionKinds =
-        [PieceKind.Queen, PieceKind.Rook, PieceKind.Bishop, PieceKind.Knight];
+        [PieceKind.Queen, PieceKind.Rook, PieceKind.Bishop, PieceKind.Knight, PieceKind.Trishop];
     private readonly Rectangle[] _modeButtons =
     {
         new(1090, 826, 86, 25), new(1183, 826, 96, 25), new(1286, 826, 86, 25)
@@ -159,9 +160,13 @@ public sealed class Game1 : Game
             else if (Pressed(keyboard, Keys.R)) CompletePromotion(PieceKind.Rook);
             else if (Pressed(keyboard, Keys.B)) CompletePromotion(PieceKind.Bishop);
             else if (Pressed(keyboard, Keys.N)) CompletePromotion(PieceKind.Knight);
+            else if (Pressed(keyboard, Keys.T)) CompletePromotion(PieceKind.Trishop);
         }
         if (!promotionReady && Pressed(keyboard, Keys.R)) ResetGame();
         if (Pressed(keyboard, Keys.U)) Undo();
+        if (!promotionReady && Pressed(keyboard, Keys.M)) ToggleMinesweeper();
+        if (IsHumanTurn && _model.MinesweeperEnabled && Pressed(keyboard, Keys.X)) CycleScoutPattern();
+        if (IsHumanTurn && _model.MinesweeperEnabled && Pressed(keyboard, Keys.S)) Scout();
         if (IsHumanTurn && (Pressed(keyboard, Keys.D1) || Pressed(keyboard, Keys.NumPad1)))
             _model.SetPlane(MovementPlane.XY);
         if (IsHumanTurn && (Pressed(keyboard, Keys.D2) || Pressed(keyboard, Keys.NumPad2)))
@@ -253,6 +258,27 @@ public sealed class Game1 : Game
         _botDelayRemaining = BotMoveDelay;
         _botMoveUnavailable = false;
         ClearTransition();
+    }
+
+    private void ToggleMinesweeper()
+    {
+        _model.SetMinesweeperEnabled(!_model.MinesweeperEnabled);
+        _positionVersion++; _botDelayRemaining = BotMoveDelay; _botMoveUnavailable = false; _scoutPatternIndex = 0; ClearTransition();
+    }
+
+    private IReadOnlyList<string> ScoutPatterns => _model.ScoutPatterns();
+    private void CycleScoutPattern()
+    {
+        var patterns = ScoutPatterns; if (patterns.Count == 0) return;
+        _scoutPatternIndex = (_scoutPatternIndex + 1) % patterns.Count;
+        _model.SetMessage($"Scout pattern: {patterns[_scoutPatternIndex]}. Press S to scan for free.");
+    }
+
+    private void Scout()
+    {
+        var patterns = ScoutPatterns; if (patterns.Count == 0) return;
+        _scoutPatternIndex %= patterns.Count;
+        if (_model.Scout(patterns[_scoutPatternIndex])) _positionVersion++;
     }
 
     private void SetMatchMode(MatchMode mode)
@@ -386,6 +412,7 @@ public sealed class Game1 : Game
             SetMatchMode((MatchMode)i);
             return;
         }
+        if (new Rectangle(1214, 110, 158, 25).Contains(point)) { ToggleMinesweeper(); return; }
         if (_model.PendingPromotionPieceId is not null && _preImpactTerrain is null)
         {
             for (var i = 0; i < _promotionButtons.Length; i++)
@@ -399,6 +426,8 @@ public sealed class Game1 : Game
         if (new Rectangle(1090, 774, 135, 43).Contains(point)) { Undo(); return; }
         if (new Rectangle(1237, 774, 135, 43).Contains(point)) { ResetGame(); return; }
         if (new Rectangle(1330, 26, 42, 34).Contains(point)) { _showHelp = true; return; }
+        if (_model.MinesweeperEnabled && new Rectangle(1090, 462, 186, 22).Contains(point)) { CycleScoutPattern(); return; }
+        if (_model.MinesweeperEnabled && new Rectangle(1282, 462, 90, 22).Contains(point)) { Scout(); return; }
 
         for (var i = 0; i < _planeButtons.Length; i++)
         {
@@ -619,6 +648,7 @@ public sealed class Game1 : Game
         DrawText("TERRARIUM", new Vector2(1090, 27), new Color(82, 241, 216), .88f);
         DrawText("GLADIATORS", new Vector2(1090, 58), new Color(236, 226, 200), .88f);
         DrawText($"TRUE 3D / {_world.ElevationDegrees:00}° / CAM Z {_world.CameraZ:00.0}", new Vector2(1092, 94), new Color(110, 145, 151), .43f);
+        DrawSmallButton(new Rectangle(1214, 110, 158, 25), $"M  MINES: {(_model.MinesweeperEnabled ? "ON" : "OFF")}");
         DrawText("?", new Vector2(1343, 31), new Color(113, 220, 209), .82f);
 
         var sideColor = _model.Turn == Side.White ? new Color(238, 224, 191) : new Color(239, 98, 118);
@@ -626,7 +656,7 @@ public sealed class Game1 : Game
             ? $"{_model.Winner.Value.ToString().ToUpper()} WINS"
             : IsBotTurn ? $"{_model.Turn.ToString().ToUpper()} BOT THINKING" : $"{_model.Turn.ToString().ToUpper()} TO MOVE";
         DrawText(headline, new Vector2(1090, 148), sideColor, .78f);
-        DrawText(_model.Selected is null ? "No piece selected" : $"{_model.Selected.Kind}  ·  {TerrariumModel.CellName(_model.Selected.Position)}", new Vector2(1090, 183), new Color(139, 170, 173), .55f);
+        DrawText(_model.Selected is null ? "No piece selected" : $"{_model.Selected.Kind}{(_model.Selected.Promoted ? " / TRUE 3D" : "")}  ·  {TerrariumModel.CellName(_model.Selected.Position)}", new Vector2(1090, 183), new Color(139, 170, 173), .55f);
 
         DrawText("MOVEMENT PLANE", new Vector2(1090, 211), new Color(104, 137, 145), .48f);
         for (var i = 0; i < 3; i++) DrawButton(_planeButtons[i], ((MovementPlane)i).ToString(), (int)_model.Plane == i, i + 1);
@@ -635,6 +665,12 @@ public sealed class Game1 : Game
         DrawText("FIELD REPORT", new Vector2(1090, 314), new Color(104, 137, 145), .48f);
         DrawPanel(new Rectangle(1090, 341, 282, 114));
         DrawWrapped(_model.Message, new Rectangle(1105, 355, 252, 86), new Color(206, 214, 202), .53f, 19);
+        if (_model.MinesweeperEnabled && ScoutPatterns.Count > 0)
+        {
+            _scoutPatternIndex %= ScoutPatterns.Count;
+            DrawSmallButton(new Rectangle(1090, 462, 186, 22), $"X  {ScoutPatterns[_scoutPatternIndex].ToUpper()}");
+            DrawSmallButton(new Rectangle(1282, 462, 90, 22), "S  SCAN");
+        }
 
         DrawText("ARENA PROTOCOL", new Vector2(1090, 489), new Color(104, 137, 145), .48f);
         DrawRule(new Vector2(1090, 523), new Color(83, 241, 211), "0–1 CELL DROP", "Safe landing · pieces may stack");
@@ -672,11 +708,23 @@ public sealed class Game1 : Game
             DrawText(PromotionKinds[i].ToString().ToUpper(), new Vector2(rect.X + 18, rect.Y + 15), new Color(235, 225, 199), .53f);
             DrawText(key, new Vector2(rect.Right - 24, rect.Y + 6), new Color(242, 179, 87), .38f);
         }
-        DrawText("Keyboard: Q  R  B  N", new Vector2(400, 561), new Color(112, 150, 153), .48f);
+        DrawText("Keyboard: Q  R  B  N  T", new Vector2(390, 561), new Color(112, 150, 153), .48f);
     }
 
     private void DrawWorldLabels()
     {
+        if (_model.MinesweeperEnabled)
+        {
+            foreach (var cell in _model.RevealedClues)
+            {
+                var clue = _model.ClueAt(cell);
+                if (clue is null || (!_depthFocus && clue == 0) || (_depthFocus && cell.Z != _selectedDepth)) continue;
+                var at = _world.Project(new Vector3(cell.X, cell.Y, cell.Z + .5f));
+                if (at.X is < 0 or > 1040 || at.Y is < 0 or > 900) continue;
+                var color = clue >= 4 ? new Color(255, 102, 122) : clue >= 2 ? new Color(255, 209, 102) : new Color(127, 255, 240);
+                DrawText(clue.Value.ToString(), at - new Vector2(4, 6), color, .42f);
+            }
+        }
         if (_depthFocus)
         {
             var at = _world.Project(new Vector3(7.7f, 7.7f, _selectedDepth + .05f));

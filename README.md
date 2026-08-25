@@ -65,6 +65,8 @@ piece will break it; otherwise it is red.
 
 - `1`, `2`, `3`: switch between XY, XZ, and YZ movement planes
 - `Space`: cycle the movement plane
+- `M`: toggle the optional Minesweeper addon (restarts the match)
+- `X`: cycle the selected piece's scouting pattern; `S`: scan for free
 - Left-drag sideways over the world: orbit continuously around the board
 - Left-drag vertically: adjust camera elevation between 30 and 60 degrees
 - Up / Down arrows: translate the camera along world Z
@@ -98,8 +100,20 @@ piece will break it; otherwise it is red.
   home rank and every cell between them is empty. Check restrictions are not
   applied because this prototype does not enforce check.
 - A pawn reaching the enemy's far Y rank promotes at any elevation. Play pauses
-  after landing so White can choose Queen, Rook, Bishop, or Knight; the bot
-  chooses automatically.
+  after landing so White can choose Queen, Rook, Bishop, Knight, or the pawn-only
+  `(1,1,1)`-sliding Trishop; the bot chooses automatically.
+- Any piece that reaches the enemy back rank awakens true-3D movement that is
+  always available regardless of the selected plane. Promoted Bishops, Rooks,
+  and Queens add Trishop rays; Kings add one-step space diagonals; Knights add
+  every `(1,1,2)` permutation to their ordinary `(0,1,2)` jumps.
+- The opt-in Minesweeper addon seeds mines below a guaranteed-safe top terrain
+  layer. Its one-cell clue shell expands the 8×8×16 play volume to 10×10×18.
+  Pregame zero-clue flood fills carve stable cavern systems beneath the surface.
+- A selected piece can freely scout with one chosen component of its movement
+  pattern. Scouting reveals number clues without consuming the turn.
+- Standing above a mine is safe. Excavating or impact-cratering its terrain cell
+  detonates it, destroying pieces in a 3×3×3 volume while leaving neighboring
+  terrain intact.
 - Non-pawns may excavate reachable solid cells on their own Z level or above.
   Rooks, Bishops, and Queens stop one cell before the excavated cell; Knights
   excavate without moving; Kings enter the newly opened cell immediately.
