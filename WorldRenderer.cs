@@ -70,6 +70,24 @@ public sealed class WorldRenderer : IDisposable
         return new Vector2(projected.X, projected.Y);
     }
 
+    public bool IsClueVisible(bool[,,] solids, Int3 clue)
+    {
+        UpdateCamera();
+        var point = new Vector3(clue.X, clue.Y, clue.Z + .5f);
+        var forward = Vector3.Normalize(new Vector3(3.5f, 3.5f, 7.4f + HeightOffset) - _cameraPosition);
+        Int3? previous = null;
+        for (var distance = .12f; distance < 42f; distance += .12f)
+        {
+            var sample = point - forward * distance;
+            var cell = new Int3((int)MathF.Round(sample.X), (int)MathF.Round(sample.Y), (int)MathF.Floor(sample.Z));
+            if (cell == previous || cell == clue) continue;
+            previous = cell;
+            if (LayerFocus && cell.Z != FocusLayer) continue;
+            if (Solid(solids, cell.X, cell.Y, cell.Z)) return false;
+        }
+        return true;
+    }
+
     public Vector2 ProjectTarget(TerrariumModel model, Int3 target)
     {
         UpdateCamera();

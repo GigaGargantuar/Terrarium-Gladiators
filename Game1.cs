@@ -718,7 +718,8 @@ public sealed class Game1 : Game
             foreach (var cell in _model.RevealedClues)
             {
                 var clue = _model.ClueAt(cell);
-                if (clue is null || (!_depthFocus && clue == 0) || (_depthFocus && cell.Z != _selectedDepth)) continue;
+                if (clue is null || (!_depthFocus && clue == 0) || (_depthFocus && cell.Z != _selectedDepth) ||
+                    !_world.IsClueVisible(_preImpactTerrain ?? _model.Solids, cell)) continue;
                 var at = _world.Project(new Vector3(cell.X, cell.Y, cell.Z + .5f));
                 if (at.X is < 0 or > 1040 || at.Y is < 0 or > 900) continue;
                 var color = clue >= 4 ? new Color(255, 102, 122) : clue >= 2 ? new Color(255, 209, 102) : new Color(127, 255, 240);
