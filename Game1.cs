@@ -262,7 +262,7 @@ public sealed class Game1 : Game
             _cameraDragging = false;
         }
         if (mouse.RightButton == ButtonState.Pressed && _oldMouse.RightButton == ButtonState.Released)
-            _model.ClearSelection();
+            HandleRightClick(ToVirtualPoint(mouse.Position));
 
         UpdateBot(elapsed);
 
@@ -511,16 +511,51 @@ public sealed class Game1 : Game
             }
         }
 
-        var clicked = _model.Pieces
+        var clicked = FindClickedPiece(point);
+        if (clicked is not null) _model.Select(clicked.Id);
+        else if (!TryToggleCellMark(point, false)) _model.ClearSelection();
+    }
+
+    private ChessPiece? FindClickedPiece(Point point) => _model.Pieces
             .Select(piece =>
             {
                 var screen = _world.Project(new Vector3(piece.Position.X, piece.Position.Y, piece.Position.Z + .48f));
                 return (Piece: piece, Distance: Vector2.Distance(point.ToVector2(), screen), Depth: screen.Y);
             })
-            .Where(candidate => candidate.Distance < 32f)
-            .OrderBy(candidate => candidate.Distance).ThenByDescending(candidate => candidate.Depth).FirstOrDefault();
-        if (clicked.Piece is not null) _model.Select(clicked.Piece.Id);
-        else _model.ClearSelection();
+            .Where(candidate => candidate.Distance < 18f)
+            .OrderBy(candidate => candidate.Distance).ThenByDescending(candidate => candidate.Depth)
+            .Select(candidate => candidate.Piece).FirstOrDefault();
+
+    private void HandleRightClick(Point point)
+    {
+        if (_showHelp || _preImpactTerrain is not null || point.X is < 0 or >= 1050 ||
+            !IsHumanTurn || FindClickedPiece(point) is not null || !TryToggleCellMark(point, true))
+            _model.ClearSelection();
+    }
+
+    private bool TryToggleCellMark(Point point, bool mineFlag)
+    {
+        if (!_model.MinesweeperEnabled) return false;
+        var cell = FindClickedCell(point);
+        return cell is { } target && _model.ToggleCellMark(target, mineFlag);
+    }
+
+    private Int3? FindClickedCell(Point point)
+    {
+        Int3? best = null;
+        var bestDistance = 23f;
+        var bestDepth = float.MaxValue;
+        for (var x = 0; x < 8; x++) for (var y = 0; y < 8; y++) for (var z = 0; z < 16; z++)
+        {
+            var cell = new Int3(x, y, z);
+            if (!_model.Solids[x, y, z] || _model.PieceAt(cell) is not null ||
+                _depthFocus && (z < _selectedDepth || z > _selectedDepth + 1)) continue;
+            var screen = _world.ProjectCell(cell, _model.Solids);
+            var distance = Vector2.Distance(point.ToVector2(), new Vector2(screen.X, screen.Y));
+            if (distance > bestDistance || MathF.Abs(distance - bestDistance) < .01f && screen.Z >= bestDepth) continue;
+            best = cell; bestDistance = distance; bestDepth = screen.Z;
+        }
+        return best;
     }
 
     private void StartTransition(int movingId, Int3 moveFrom, bool[,,] terrainBefore, bool[,,] minesBefore,
@@ -775,7 +810,7 @@ public sealed class Game1 : Game
         DrawSmallButton(new Rectangle(1237, 774, 135, 43), "R  RESTART");
         for (var i = 0; i < _modeButtons.Length; i++)
             DrawModeButton(_modeButtons[i], ModeLabels[i], (int)_matchMode == i);
-        DrawText("Right-click to deselect  ·  Esc to quit", new Vector2(1090, 861), new Color(74, 104, 111), .43f);
+        DrawText(_model.MinesweeperEnabled ? "Empty cell: LMB safe · RMB flag" : "Right-click to deselect  ·  Esc to quit", new Vector2(1090, 861), new Color(74, 104, 111), .43f);
 
         if (_showHelp) DrawHelpOverlay();
         else if (_model.PendingPromotionPieceId is not null && _preImpactTerrain is null) DrawPromotionOverlay();

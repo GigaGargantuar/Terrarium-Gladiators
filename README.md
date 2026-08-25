@@ -67,6 +67,9 @@ piece will break it; otherwise it is red.
 - `Space`: cycle the movement plane
 - `M`: toggle the optional Minesweeper addon (restarts the match)
 - `X`: cycle the selected piece's scouting pattern; `S`: scan for free
+- With Minesweeper enabled, LMB an unoccupied terrain cell to toggle a safe
+  marker and RMB it to toggle a suspected-mine flag; annotations are turn-free
+  and never inspect or modify the terrain or hidden minefield
 - Left-drag sideways over the world: orbit continuously around the board
 - Left-drag vertically: orbit through the full −90° to +90° vertical arc
 - Up / Down arrows: translate the camera along world Z
@@ -139,9 +142,9 @@ piece will break it; otherwise it is red.
   transported tower falls two or more cells onto terrain, its moved bottom
   piece is squashed by the pieces above it and the impact leaves a crater.
 - Pawns, Kings, Rooks, and Queens may move straight upward into cells currently
-  occupied by their own contiguous tower; those cells are vacated as the entire
-  carried section translates upward with the moving piece. An enemy immediately
-  above the mover is captured instead of being treated as carried cargo.
+  occupied by a contiguous tower; those cells are vacated as the carried section
+  translates upward. Kings, Rooks, and Queens capture an enemy immediately above
+  them, while a Pawn cannot make that vertical capture and shifts the tower instead.
 - Sliding Rooks, Bishops, and Queens sweep their carried towers through the
   whole path, where terrain or any non-carried piece blocks an intermediate
   step. At the landing cells above a captured tower base, a same-side piece

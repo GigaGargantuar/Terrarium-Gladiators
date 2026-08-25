@@ -133,8 +133,8 @@ test("straight-up movers carry pieces occupying their upward destinations", () =
   }
 });
 
-test("an enemy directly above a straight-up mover is captured instead of carried", () => {
-  for(const kind of [Kind.PAWN,Kind.KING,Kind.ROOK,Kind.QUEEN]){
+test("Kings, Rooks, and Queens capture an enemy directly above instead of carrying it", () => {
+  for(const kind of [Kind.KING,Kind.ROOK,Kind.QUEEN]){
     const base=tacticalPiece(1,Side.WHITE,kind,3,3,4);base.hasMoved=false;
     const game=tacticalPosition([
       base,
@@ -147,6 +147,21 @@ test("an enemy directly above a straight-up mover is captured instead of carried
     game.select(base.id);assert.equal(game.tryMove(target),true);
     assert.equal(game.pieces.some(piece=>piece.id===2),false,`${kind} should capture the enemy directly above it`);
   }
+});
+
+test("a Pawn shifts an enemy directly above as cargo instead of capturing it", () => {
+  const pawn=tacticalPiece(1,Side.WHITE,Kind.PAWN,3,3,4);pawn.hasMoved=false;
+  const game=tacticalPosition([
+    pawn,
+    tacticalPiece(2,Side.BLACK,Kind.KNIGHT,3,3,5),
+    tacticalPiece(3,Side.WHITE,Kind.BISHOP,3,3,6),
+  ],Side.WHITE);
+  game.setSolid(3,3,3,true);game.plane=Plane.XZ;
+  const target={x:3,y:3,z:5};
+  assert.ok(game.legalMoves(pawn).some(move=>move.x===target.x&&move.y===target.y&&move.z===target.z));
+  game.select(pawn.id);assert.equal(game.tryMove(target),true);
+  assert.equal(game.pieces.some(piece=>piece.id===2),true);
+  assert.ok(game.lastFalls.some(fall=>fall.pieceId===2&&fall.startsWithMove&&fall.to.z===6));
 });
 
 test("moving the bottom piece carries its contiguous tower", () => {
@@ -327,6 +342,19 @@ test("minefield generation randomizes resets and still accepts a reproducible se
   game.reset(12345);assert.deepEqual([...game.mines],seeded);
   game.reset();const randomField=[...game.mines];game.reset();
   assert.notDeepEqual([...game.mines],randomField);
+});
+
+test("safe and mine cell markers are mutually exclusive, free, and informational only", () => {
+  const game=new TerrariumModel();game.setMinesweeperEnabled(true,12345);
+  let cell=null;for(let x=0;x<8&&!cell;x++)for(let y=0;y<8&&!cell;y++)for(let z=0;z<8;z++)if(game.solidAt(x,y,z)&&!game.pieceAt({x,y,z})){cell={x,y,z};break}
+  assert.ok(cell);
+  const terrain=[...game.solids],mines=[...game.mines],turn=game.turn;
+  assert.equal(game.toggleCellMark(cell,false),true);assert.equal(game.safeMarks.has(`${cell.x},${cell.y},${cell.z}`),true);
+  assert.equal(game.toggleCellMark(cell,true),true);assert.equal(game.safeMarks.size,0);assert.equal(game.mineFlags.has(`${cell.x},${cell.y},${cell.z}`),true);
+  assert.equal(game.toggleCellMark(cell,true),true);assert.equal(game.mineFlags.size,0);
+  assert.deepEqual([...game.solids],terrain);assert.deepEqual([...game.mines],mines);assert.equal(game.turn,turn);
+  assert.equal(game.toggleCellMark(game.pieces[0].position,false),false,"occupied cells cannot be annotated");
+  game.reset(12345);assert.equal(game.safeMarks.size,0);assert.equal(game.mineFlags.size,0);
 });
 
 test("promoted movement is true 3D and independent of movement plane", () => {

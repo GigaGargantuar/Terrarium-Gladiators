@@ -52,6 +52,8 @@ public sealed class TerrariumModel
     public bool[,,] Solids { get; private set; } = new bool[8, 8, 16];
     public bool[,,] Mines { get; private set; } = new bool[8, 8, 16];
     public HashSet<Int3> RevealedClues { get; private set; } = new();
+    public HashSet<Int3> SafeMarks { get; private set; } = new();
+    public HashSet<Int3> MineFlags { get; private set; } = new();
     public bool MinesweeperEnabled { get; private set; }
     private HashSet<Int3> CavernProtected { get; set; } = new();
     private HashSet<Int3> DisturbedTerrain { get; set; } = new();
@@ -81,6 +83,8 @@ public sealed class TerrariumModel
         Solids = (bool[,,])Solids.Clone(),
         Mines = (bool[,,])Mines.Clone(),
         RevealedClues = new HashSet<Int3>(RevealedClues),
+        SafeMarks = new HashSet<Int3>(SafeMarks),
+        MineFlags = new HashSet<Int3>(MineFlags),
         CavernProtected = new HashSet<Int3>(CavernProtected),
         DisturbedTerrain = new HashSet<Int3>(DisturbedTerrain),
         MinesweeperEnabled = MinesweeperEnabled,
@@ -106,6 +110,8 @@ public sealed class TerrariumModel
 
         if (MinesweeperEnabled) GenerateMinefield(mineSeed);
         else { Mines = new bool[8, 8, 16]; RevealedClues = new HashSet<Int3>(); CavernProtected = new HashSet<Int3>(); DisturbedTerrain = new HashSet<Int3>(); }
+        SafeMarks = new HashSet<Int3>();
+        MineFlags = new HashSet<Int3>();
 
         Pieces = new List<ChessPiece>();
         _nextId = 1;
@@ -161,6 +167,20 @@ public sealed class TerrariumModel
     }
 
     public bool IsMine(Int3 p) => IsInside(p) && Mines[p.X, p.Y, p.Z];
+
+    public bool ToggleCellMark(Int3 cell, bool mineFlag)
+    {
+        if (!MinesweeperEnabled || !IsInside(cell) || PieceAt(cell) is not null) return false;
+        var selected = mineFlag ? MineFlags : SafeMarks;
+        var other = mineFlag ? SafeMarks : MineFlags;
+        other.Remove(cell);
+        var enabled = selected.Add(cell);
+        if (!enabled) selected.Remove(cell);
+        Message = enabled
+            ? $"{CellName(cell)} marked {(mineFlag ? "as a suspected mine" : "safe to reveal")}. Marking is free."
+            : $"Marker removed from {CellName(cell)}.";
+        return true;
+    }
 
     public int? ClueAt(Int3 p)
     {
@@ -387,12 +407,7 @@ public sealed class TerrariumModel
         var carriedIds = UpwardCarriedIds(piece);
         bool VacatedByTower(Int3 cell) => PieceAt(cell) is { } occupant && carriedIds.Contains(occupant.Id);
         var oneUp = piece.Position + new Int3(0, 0, 1);
-        var directOccupant = PieceAt(oneUp);
-        if (directOccupant is not null && directOccupant.Side != piece.Side)
-        {
-            result.Add(oneUp);
-        }
-        else if (IsEmpty(oneUp) || VacatedByTower(oneUp))
+        if (IsEmpty(oneUp) || VacatedByTower(oneUp))
         {
             result.Add(oneUp);
             var twoUp = piece.Position + new Int3(0, 0, 2);
@@ -440,7 +455,7 @@ public sealed class TerrariumModel
     private HashSet<int> UpwardCarriedIds(ChessPiece piece)
     {
         var tower = TowerAbove(piece);
-        return tower.Count > 0 && tower[0].Side == piece.Side
+        return tower.Count > 0 && (piece.Kind == PieceKind.Pawn || tower[0].Side == piece.Side)
             ? tower.Select(member => member.Id).ToHashSet()
             : [];
     }

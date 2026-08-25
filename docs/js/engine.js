@@ -21,6 +21,8 @@ export class TerrariumModel {
     this.solids = new Uint8Array(8 * 8 * 16);
     this.mines = new Uint8Array(8 * 8 * 16);
     this.revealedClues = new Set();
+    this.safeMarks = new Set();
+    this.mineFlags = new Set();
     this.cavernProtected = new Set();
     this.disturbedTerrain = new Set();
     this.pieces = [];
@@ -41,6 +43,7 @@ export class TerrariumModel {
     this.solids = new Uint8Array(8 * 8 * 16);
     for (let x = 0; x < 8; x++) for (let y = 0; y < 8; y++) for (let z = 0; z < 8; z++) this.setSolid(x, y, z, true);
     if(this.minesweeperEnabled)this.generateMinefield(mineSeed??TerrariumModel.randomMineSeed());else{this.mines=new Uint8Array(8*8*16);this.revealedClues=new Set();this.cavernProtected=new Set();this.disturbedTerrain=new Set()}
+    this.safeMarks=new Set();this.mineFlags=new Set();
     this.pieces = [];
     this.nextId = 1;
     this.addArmy(Side.WHITE, 0, 1);
@@ -106,6 +109,7 @@ export class TerrariumModel {
     copy.solids = this.solids.slice();
     copy.mines = this.mines?.slice()??new Uint8Array(8*8*16);
     copy.revealedClues = new Set(this.revealedClues??[]);
+    copy.safeMarks = new Set(this.safeMarks??[]);copy.mineFlags = new Set(this.mineFlags??[]);
     copy.cavernProtected = new Set(this.cavernProtected??[]);copy.disturbedTerrain=new Set(this.disturbedTerrain??[]);
     copy.pieces = this.pieces.map(clonePiece);
     copy.turn = this.turn; copy.plane = this.plane; copy.winner = this.winner;
@@ -127,6 +131,7 @@ export class TerrariumModel {
     this.selectedId = id; this.message = `${piece.side} ${piece.kind} selected on ${this.plane}.`; return true;
   }
   clearSelection() { this.selectedId = null; }
+  toggleCellMark(cell,mineFlag){if(!this.minesweeperEnabled||!TerrariumModel.isInside(cell)||this.pieceAt(cell))return false;const encoded=key(cell),selected=mineFlag?this.mineFlags:this.safeMarks,other=mineFlag?this.safeMarks:this.mineFlags;other.delete(encoded);const enabled=!selected.has(encoded);if(enabled)selected.add(encoded);else selected.delete(encoded);this.message=enabled?`${TerrariumModel.cellName(cell)} marked ${mineFlag?"as a suspected mine":"safe to reveal"}. Marking is free.`:`Marker removed from ${TerrariumModel.cellName(cell)}.`;return true}
 
   static isInside(p) { return p.x >= 0 && p.x < 8 && p.y >= 0 && p.y < 8 && p.z >= 0 && p.z < 16; }
   pieceAt(p) { return this.pieces.find(piece => eq(piece.position, p)) ?? null; }
@@ -200,9 +205,7 @@ export class TerrariumModel {
   addWallPawnMoves(piece, result, forward) {
     const wallLatched = this.isWallLatched(piece.position),carriedIds=this.upwardCarriedIds(piece),vacatedByTower=cell=>{const occupant=this.pieceAt(cell);return !!occupant&&carriedIds.has(occupant.id)};
     const oneUp = add(piece.position, v(0,0,1));
-    const directOccupant=this.pieceAt(oneUp);
-    if(directOccupant&&directOccupant.side!==piece.side)result.push(oneUp);
-    else if (this.isEmpty(oneUp)||vacatedByTower(oneUp)) { result.push(oneUp); const twoUp = add(piece.position,v(0,0,2)); if (!piece.hasMoved&&(this.isEmpty(twoUp)||vacatedByTower(twoUp))) result.push(twoUp); }
+    if (this.isEmpty(oneUp)||vacatedByTower(oneUp)) { result.push(oneUp); const twoUp = add(piece.position,v(0,0,2)); if (!piece.hasMoved&&(this.isEmpty(twoUp)||vacatedByTower(twoUp))) result.push(twoUp); }
     else if (wallLatched && this.isSolid(oneUp)) result.push(oneUp);
     if (this.plane !== Plane.YZ) return;
     for (const dz of [-1,1]) {
@@ -219,7 +222,7 @@ export class TerrariumModel {
     return result;
   }
 
-  upwardCarriedIds(piece){const tower=this.towerAbove(piece);return new Set(tower.length&&tower[0].side===piece.side?tower.map(member=>member.id):[])}
+  upwardCarriedIds(piece){const tower=this.towerAbove(piece);return new Set(tower.length&&(piece.kind===Kind.PAWN||tower[0].side===piece.side)?tower.map(member=>member.id):[])}
 
   canTransportTower(piece, target) {
     const destination = this.moveDestination(piece, target, this.isSolid(target));

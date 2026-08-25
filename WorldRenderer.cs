@@ -54,6 +54,7 @@ public sealed class WorldRenderer : IDisposable
 
         BuildTerrain(terrainOverride ?? model.Solids);
         BuildLayerGuide();
+        BuildCellMarks(model, terrainOverride ?? model.Solids);
         BuildClues(model, terrainOverride ?? model.Solids, mineOverride ?? model.Mines, clueOverride ?? model.RevealedClues);
         BuildMoveHints(model, legalMoves);
         foreach (var rendered in pieces.OrderBy(p => Vector3.DistanceSquared(p.Position, _cameraPosition)).Reverse())
@@ -86,6 +87,13 @@ public sealed class WorldRenderer : IDisposable
             : MoveHintGeometry(model, target, excavation).Center;
         var projected = _worldViewport.Project(center, _projection, _view, Matrix.Identity);
         return new Vector2(projected.X, projected.Y);
+    }
+
+    public Vector3 ProjectCell(Int3 cell, bool[,,] solids)
+    {
+        UpdateCamera();
+        var projected = _worldViewport.Project(CellFaceGeometry(cell, solids).Center, _projection, _view, Matrix.Identity);
+        return projected;
     }
 
     private void UpdateCamera()
@@ -168,6 +176,57 @@ public sealed class WorldRenderer : IDisposable
                 new Vector3(7.55f, 7.55f, z), new Vector3(-.55f, 7.55f, z), color, true);
             AddFrame(new Vector3(3.5f, 3.5f, z), new Vector2(8.18f), new Color(93, 255, 229, 155), .035f);
         }
+    }
+
+    private void BuildCellMarks(TerrariumModel model, bool[,,] solids)
+    {
+        foreach (var cell in model.SafeMarks)
+        {
+            if (!Solid(solids, cell.X, cell.Y, cell.Z) || LayerFocus && !InFocusWindow(cell.Z)) continue;
+            var geometry = CellFaceGeometry(cell, solids);
+            AddPlaneFrame(geometry.Center + geometry.Normal * .018f, geometry.U, geometry.V,
+                .56f, new Color(73, 235, 207, 235), .055f);
+        }
+        foreach (var cell in model.MineFlags)
+        {
+            if (!Solid(solids, cell.X, cell.Y, cell.Z) || LayerFocus && !InFocusWindow(cell.Z)) continue;
+            var geometry = CellFaceGeometry(cell, solids);
+            var diagonalA = Vector3.Normalize(geometry.U + geometry.V);
+            var diagonalB = Vector3.Normalize(geometry.U - geometry.V);
+            var center = geometry.Center + geometry.Normal * .035f;
+            AddPlaneBox(center, diagonalA, diagonalB, new Vector3(.58f, .075f, .055f), new Color(247, 73, 97));
+            AddPlaneBox(center, diagonalB, diagonalA, new Vector3(.58f, .075f, .055f), new Color(247, 73, 97));
+        }
+    }
+
+    private (Vector3 Center, Vector3 U, Vector3 V, Vector3 Normal) CellFaceGeometry(Int3 cell, bool[,,]? solids = null)
+    {
+        var cellCenter = new Vector3(cell.X, cell.Y, cell.Z + .49f);
+        var towardCamera = _cameraPosition - cellCenter;
+        var normals = new[] { Vector3.UnitX, -Vector3.UnitX, Vector3.UnitY, -Vector3.UnitY, Vector3.UnitZ, -Vector3.UnitZ };
+        var normal = normals.Where(candidate =>
+            {
+                if (solids is null) return true;
+                var neighbor = cell + new Int3((int)candidate.X, (int)candidate.Y, (int)candidate.Z);
+                return !Solid(solids, neighbor.X, neighbor.Y, neighbor.Z) ||
+                       LayerFocus && !InFocusWindow(neighbor.Z);
+            })
+            .OrderByDescending(candidate => Vector3.Dot(candidate, towardCamera)).FirstOrDefault();
+        if (normal == Vector3.Zero) normal = normals.OrderByDescending(candidate => Vector3.Dot(candidate, towardCamera)).First();
+        Vector3 u, v;
+        if (normal.X != 0)
+        {
+            u = normal.X > 0 ? Vector3.UnitY : -Vector3.UnitY; v = Vector3.UnitZ;
+        }
+        else if (normal.Y != 0)
+        {
+            u = normal.Y > 0 ? -Vector3.UnitX : Vector3.UnitX; v = Vector3.UnitZ;
+        }
+        else
+        {
+            u = Vector3.UnitX; v = normal.Z > 0 ? Vector3.UnitY : -Vector3.UnitY;
+        }
+        return (cellCenter + normal * .505f, u, v, normal);
     }
 
     private void BuildMoveHints(TerrariumModel model, IReadOnlyList<Int3> moves)
