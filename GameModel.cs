@@ -92,7 +92,7 @@ public sealed class TerrariumModel
         _nextId = _nextId
     };
 
-    public void Reset()
+    public void Reset(int? mineSeed = null)
     {
         Solids = new bool[8, 8, 16];
         for (var x = 0; x < 8; x++)
@@ -100,7 +100,7 @@ public sealed class TerrariumModel
         for (var z = 0; z < 8; z++)
             Solids[x, y, z] = true;
 
-        if (MinesweeperEnabled) GenerateMinefield();
+        if (MinesweeperEnabled) GenerateMinefield(mineSeed);
         else { Mines = new bool[8, 8, 16]; RevealedClues = new HashSet<Int3>(); CavernProtected = new HashSet<Int3>(); DisturbedTerrain = new HashSet<Int3>(); }
 
         Pieces = new List<ChessPiece>();
@@ -120,17 +120,17 @@ public sealed class TerrariumModel
         _history.Clear();
     }
 
-    public void SetMinesweeperEnabled(bool enabled)
+    public void SetMinesweeperEnabled(bool enabled, int? mineSeed = null)
     {
         MinesweeperEnabled = enabled;
-        Reset();
+        Reset(mineSeed);
     }
 
-    private void GenerateMinefield()
+    private void GenerateMinefield(int? seed = null)
     {
         Mines = new bool[8, 8, 16];
         RevealedClues = new HashSet<Int3>(); CavernProtected = new HashSet<Int3>(); DisturbedTerrain = new HashSet<Int3>();
-        var random = new Random(unchecked((int)0x54475233));
+        var random = seed is { } value ? new Random(value) : Random.Shared;
         for (var x = 0; x < 8; x++) for (var y = 0; y < 8; y++) for (var z = 0; z < 7; z++)
             Mines[x, y, z] = random.NextDouble() < .12;
         for (var x = -1; x <= 8; x++) for (var y = -1; y <= 8; y++) for (var z = -1; z <= 16; z++)
@@ -791,10 +791,27 @@ public sealed class TerrariumModel
                         if (supportZ >= 0 && Solids[x, y, supportZ])
                         {
                             var contact = new Int3(x, y, supportZ);
+                            var mineContact = IsMine(contact);
                             RemoveTerrain(contact, events, bottom.Id, contact);
                             environmentPieceId = bottom.Id;
                             environmentContact = contact;
                             events.Add($"Impact shattered cube {CellName(contact)}!");
+                            if (mineContact)
+                            {
+                                for (var projectileIndex = 0; projectileIndex < tower.Count; projectileIndex++)
+                                {
+                                    var member = tower[projectileIndex];
+                                    var from = member.Position;
+                                    var at = new Int3(x, y, Math.Min(15, contact.Z + projectileIndex));
+                                    var perished = projectileIndex <= 1;
+                                    LastFalls.Add(new PieceFallEvent(member.Id, member.Side, member.Kind, from, at, perished));
+                                    if (perished) DestroyPiece(member, $"{member.Kind} was destroyed by a mine during its fall.");
+                                    else member.Position = at;
+                                }
+                                events.Add($"The falling projectile struck a mine at {CellName(contact)} and stopped at the blast.");
+                                changed = true;
+                                break;
+                            }
                         }
                         else if (impactPiece is not null)
                         {

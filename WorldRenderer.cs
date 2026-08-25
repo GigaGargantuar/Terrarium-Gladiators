@@ -40,7 +40,8 @@ public sealed class WorldRenderer : IDisposable
         UpdateCamera();
     }
 
-    public void Draw(TerrariumModel model, bool[,,]? terrainOverride, IReadOnlyList<RenderPiece> pieces, IReadOnlyList<Int3> legalMoves)
+    public void Draw(TerrariumModel model, bool[,,]? terrainOverride, bool[,,]? mineOverride,
+        IReadOnlySet<Int3>? clueOverride, IReadOnlyList<RenderPiece> pieces, IReadOnlyList<Int3> legalMoves)
     {
         UpdateCamera();
         _opaque.Clear();
@@ -48,7 +49,7 @@ public sealed class WorldRenderer : IDisposable
 
         BuildTerrain(terrainOverride ?? model.Solids);
         BuildLayerGuide();
-        BuildClues(model, terrainOverride ?? model.Solids);
+        BuildClues(model, terrainOverride ?? model.Solids, mineOverride ?? model.Mines, clueOverride ?? model.RevealedClues);
         BuildMoveHints(model, legalMoves);
         foreach (var rendered in pieces.OrderBy(p => Vector3.DistanceSquared(p.Position, _cameraPosition)).Reverse())
             BuildPiece(rendered, rendered.Piece.Id == model.SelectedId);
@@ -176,11 +177,11 @@ public sealed class WorldRenderer : IDisposable
         }
     }
 
-    private void BuildClues(TerrariumModel model, bool[,,] solids)
+    private void BuildClues(TerrariumModel model, bool[,,] solids, bool[,,] mines, IReadOnlySet<Int3> revealedClues)
     {
-        foreach (var cell in model.RevealedClues)
+        foreach (var cell in revealedClues)
         {
-            var clue = model.ClueAt(cell);
+            var clue = ClueAt(cell, mines);
             if (clue is null || (!LayerFocus && clue == 0) || (LayerFocus && cell.Z != FocusLayer) ||
                 Solid(solids, cell.X, cell.Y, cell.Z)) continue;
 
@@ -211,6 +212,17 @@ public sealed class WorldRenderer : IDisposable
             }
         }
     }
+
+    private static int? ClueAt(Int3 cell, bool[,,] mines)
+    {
+        if (cell.X is < -1 or > 8 || cell.Y is < -1 or > 8 || cell.Z is < -1 or > 16 || MineAt(cell, mines)) return null;
+        var count = 0;
+        for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) for (var dz = -1; dz <= 1; dz++)
+            if (MineAt(cell + new Int3(dx, dy, dz), mines)) count++;
+        return count;
+    }
+
+    private static bool MineAt(Int3 cell, bool[,,] mines) => TerrariumModel.IsInside(cell) && mines[cell.X, cell.Y, cell.Z];
 
     private static string DigitSegments(char digit) => digit switch
     {

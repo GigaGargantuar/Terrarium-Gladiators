@@ -106,14 +106,17 @@ piece will break it; otherwise it is red.
   always available regardless of the selected plane. Promoted Bishops, Rooks,
   and Queens add Trishop rays; Kings add one-step space diagonals; Knights add
   every `(1,1,2)` permutation to their ordinary `(0,1,2)` jumps.
-- The opt-in Minesweeper addon seeds mines below a guaranteed-safe top terrain
-  layer. Its one-cell clue shell expands the 8×8×16 play volume to 10×10×18.
+- The opt-in Minesweeper addon generates a fresh randomized minefield for every
+  match below a guaranteed-safe top terrain layer. Its one-cell clue shell
+  expands the 8×8×16 play volume to 10×10×18.
   Pregame zero-clue flood fills carve stable cavern systems beneath the surface.
 - A selected piece can freely scout with one chosen component of its movement
   pattern. Scouting reveals number clues without consuming the turn.
 - Standing above a mine is safe. Excavating or impact-cratering its terrain cell
   detonates it, destroying pieces in a 3×3×3 volume while leaving neighboring
   terrain intact.
+- A falling piece that collides with a mine is destroyed at that contact point;
+  its projectile path ends immediately and cannot continue through the blast.
 - Non-pawns may excavate reachable solid cells on their own Z level or above.
   Rooks, Bishops, and Queens stop one cell before the excavated cell; Knights
   excavate without moving; Kings enter the newly opened cell immediately.

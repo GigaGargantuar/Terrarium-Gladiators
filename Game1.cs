@@ -17,9 +17,7 @@ public sealed class Game1 : Game
         public required PieceFallEvent Fall { get; init; }
         public float Delay { get; init; }
         public float Duration { get; init; }
-        public float Elapsed { get; set; }
-        public float Progress => MathHelper.Clamp((Elapsed - Delay) / Duration, 0, 1);
-        public bool Finished => Elapsed >= Delay + Duration;
+        public float ProgressAt(float elapsed) => MathHelper.Clamp((elapsed - Delay) / Duration, 0, 1);
     }
 
     private sealed class TerrainBreakVisual
@@ -55,6 +53,8 @@ public sealed class Game1 : Game
     private Point _dragStart;
     private Point _dragLast;
     private bool[,,]? _preImpactTerrain;
+    private bool[,,]? _preImpactMines;
+    private HashSet<Int3>? _preImpactClues;
     private List<ChessPiece>? _preImpactPieces;
     private float _transitionElapsed;
     private float _impactTime;
@@ -142,8 +142,6 @@ public sealed class Game1 : Game
     protected override void Update(GameTime gameTime)
     {
         var elapsed = (float)gameTime.ElapsedGameTime.TotalSeconds;
-        foreach (var fall in _falls) fall.Elapsed += elapsed;
-        _falls.RemoveAll(fall => fall.Finished);
         if (_preImpactTerrain is not null)
         {
             _transitionElapsed += elapsed;
@@ -151,11 +149,22 @@ public sealed class Game1 : Game
             {
                 change.Applied = true;
                 _preImpactTerrain[change.Cell.X, change.Cell.Y, change.Cell.Z] = change.Solid;
+                _preImpactClues?.Add(change.Cell);
+                if (_preImpactMines is not null && TerrariumModel.IsInside(change.Cell) &&
+                    _preImpactMines[change.Cell.X, change.Cell.Y, change.Cell.Z] != _model.Mines[change.Cell.X, change.Cell.Y, change.Cell.Z])
+                {
+                    _preImpactMines[change.Cell.X, change.Cell.Y, change.Cell.Z] = _model.Mines[change.Cell.X, change.Cell.Y, change.Cell.Z];
+                    for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) for (var dz = -1; dz <= 1; dz++)
+                        _preImpactClues?.Add(change.Cell + new Int3(dx, dy, dz));
+                }
             }
             if (_transitionElapsed >= _impactTime)
             {
                 _preImpactTerrain = null;
+                _preImpactMines = null;
+                _preImpactClues = null;
                 _preImpactPieces = null;
+                _falls.Clear();
                 _terrainBreaks.Clear();
             }
         }
@@ -328,6 +337,8 @@ public sealed class Game1 : Game
         _falls.Clear();
         _terrainBreaks.Clear();
         _preImpactTerrain = null;
+        _preImpactMines = null;
+        _preImpactClues = null;
         _preImpactPieces = null;
     }
 
@@ -399,6 +410,8 @@ public sealed class Game1 : Game
         var moving = _model.Pieces.First(piece => piece.Id == move.PieceId);
         var from = moving.Position;
         var terrainBefore = (bool[,,])_model.Solids.Clone();
+        var minesBefore = (bool[,,])_model.Mines.Clone();
+        var cluesBefore = new HashSet<Int3>(_model.RevealedClues);
         var piecesBefore = _model.Pieces.Select(piece => piece.Clone()).ToList();
         _model.SetPlane(move.Plane);
         _model.Select(move.PieceId);
@@ -406,7 +419,7 @@ public sealed class Game1 : Game
         {
             if (_model.PendingPromotionPieceId is not null) _model.Promote(PieceKind.Queen);
             _positionVersion++;
-            StartTransition(move.PieceId, from, terrainBefore, piecesBefore);
+            StartTransition(move.PieceId, from, terrainBefore, minesBefore, cluesBefore, piecesBefore);
         }
         _botDelayRemaining = BotMoveDelay;
     }
@@ -467,11 +480,13 @@ public sealed class Game1 : Game
                 var movingId = moving.Id;
                 var from = moving.Position;
                 var terrainBefore = (bool[,,])_model.Solids.Clone();
+                var minesBefore = (bool[,,])_model.Mines.Clone();
+                var cluesBefore = new HashSet<Int3>(_model.RevealedClues);
                 var piecesBefore = _model.Pieces.Select(piece => piece.Clone()).ToList();
                 if (_model.TryMove(target.Move))
                 {
                     _positionVersion++;
-                    StartTransition(movingId, from, terrainBefore, piecesBefore);
+                    StartTransition(movingId, from, terrainBefore, minesBefore, cluesBefore, piecesBefore);
                 }
                 return;
             }
@@ -489,11 +504,14 @@ public sealed class Game1 : Game
         else _model.ClearSelection();
     }
 
-    private void StartTransition(int movingId, Int3 moveFrom, bool[,,] terrainBefore, List<ChessPiece> piecesBefore)
+    private void StartTransition(int movingId, Int3 moveFrom, bool[,,] terrainBefore, bool[,,] minesBefore,
+        HashSet<Int3> cluesBefore, List<ChessPiece> piecesBefore)
     {
         _falls.Clear();
         _terrainBreaks.Clear();
         _preImpactTerrain = terrainBefore;
+        _preImpactMines = minesBefore;
+        _preImpactClues = cluesBefore;
         _preImpactPieces = piecesBefore;
         _transitionElapsed = 0;
         var delays = new Dictionary<int, float>();
@@ -544,12 +562,12 @@ public sealed class Game1 : Game
     private FallVisual? ActiveFall(int pieceId)
     {
         var candidates = _falls.Where(fall => fall.Fall.PieceId == pieceId).OrderBy(fall => fall.Delay).ToList();
-        return candidates.LastOrDefault(fall => fall.Elapsed >= fall.Delay) ?? candidates.FirstOrDefault();
+        return candidates.LastOrDefault(fall => _transitionElapsed >= fall.Delay) ?? candidates.FirstOrDefault();
     }
 
-    private static Vector3 AnimatedPosition(FallVisual animation)
+    private Vector3 AnimatedPosition(FallVisual animation)
     {
-        var t = animation.Progress;
+        var t = animation.ProgressAt(_transitionElapsed);
         var from = new Vector3(animation.Fall.From.X, animation.Fall.From.Y, animation.Fall.From.Z);
         var to = new Vector3(animation.Fall.To.X, animation.Fall.To.Y, animation.Fall.To.Z);
         var position = Vector3.Lerp(from, to, t * t);
@@ -567,17 +585,21 @@ public sealed class Game1 : Game
             var position = animation is null ? new Vector3(piece.Position.X, piece.Position.Y, piece.Position.Z) : AnimatedPosition(animation);
             var visualPiece = piece;
             var before = _preImpactPieces?.FirstOrDefault(candidate => candidate.Id == piece.Id);
-            if (before is not null && before.Kind != piece.Kind) visualPiece = before;
+            if (before is not null) visualPiece = before;
             result.Add(new RenderPiece(visualPiece, position, 1f));
         }
-        foreach (var animation in _falls.Where(fall => fall.Fall.Perished && ActiveFall(fall.Fall.PieceId) == fall))
+        var finalIds = _model.Pieces.Select(piece => piece.Id).ToHashSet();
+        foreach (var pieceId in _falls.Select(fall => fall.Fall.PieceId).Distinct().Where(pieceId => !finalIds.Contains(pieceId)))
         {
+            var animation = ActiveFall(pieceId);
+            if (animation is null) continue;
+            var before = _preImpactPieces?.FirstOrDefault(piece => piece.Id == pieceId);
             var ghost = new ChessPiece { Id = animation.Fall.PieceId, Side = animation.Fall.Side, Kind = animation.Fall.Kind, Position = animation.Fall.To };
-            result.Add(new RenderPiece(ghost, AnimatedPosition(animation), 1f - MathF.Pow(animation.Progress, 3)));
+            var opacity = animation.Fall.Perished ? 1f - MathF.Pow(animation.ProgressAt(_transitionElapsed), 3) : 1f;
+            result.Add(new RenderPiece(before ?? ghost, AnimatedPosition(animation), opacity));
         }
         if (_preImpactPieces is not null)
         {
-            var finalIds = _model.Pieces.Select(piece => piece.Id).ToHashSet();
             var animatedIds = _falls.Select(fall => fall.Fall.PieceId).ToHashSet();
             foreach (var piece in _preImpactPieces.Where(piece => !finalIds.Contains(piece.Id) && !animatedIds.Contains(piece.Id)))
                 result.Add(new RenderPiece(piece, new Vector3(piece.Position.X, piece.Position.Y, piece.Position.Z), 1f));
@@ -592,7 +614,7 @@ public sealed class Game1 : Game
         GraphicsDevice.Clear(new Color(7, 11, 20));
         DrawBackdrop();
         var legalMoves = _preImpactTerrain is null ? _model.LegalMoves() : Array.Empty<Int3>();
-        _world.Draw(_model, _preImpactTerrain, RenderPieces(), legalMoves);
+        _world.Draw(_model, _preImpactTerrain, _preImpactMines, _preImpactClues, RenderPieces(), legalMoves);
         DrawInterface();
 
         GraphicsDevice.SetRenderTarget(null);

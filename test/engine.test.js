@@ -270,6 +270,15 @@ test("the Minesweeper addon is opt-in and builds a safe-top clue field", () => {
   assert.equal(game.resolveTerrainGravity([]),false,"pregame cavern ceilings stay stable until nearby disturbance");
 });
 
+test("minefield generation randomizes resets and still accepts a reproducible seed", () => {
+  const game=new TerrariumModel();game.setMinesweeperEnabled(true,12345);
+  const seeded=[...game.mines];game.reset(54321);
+  assert.notDeepEqual([...game.mines],seeded);
+  game.reset(12345);assert.deepEqual([...game.mines],seeded);
+  game.reset();const randomField=[...game.mines];game.reset();
+  assert.notDeepEqual([...game.mines],randomField);
+});
+
 test("promoted movement is true 3D and independent of movement plane", () => {
   const game = tacticalPosition([
     {...tacticalPiece(1, Side.WHITE, Kind.BISHOP, 3, 3, 3), promoted:true},
@@ -324,6 +333,21 @@ test("excavating a mine blasts pieces in 3x3x3 without collateral terrain damage
   assert.equal(game.solidAt(2,3,3),true,"blast must not remove neighboring terrain");
   assert.equal(game.mineAt(3,3,3),false);
   assert.match(events.join(" "),/Mine detonated/);
+});
+
+test("a falling projectile is destroyed at a mine contact and cannot continue", () => {
+  const game=tacticalPosition([tacticalPiece(1,Side.WHITE,Kind.ROOK,3,3,10)],Side.WHITE);
+  game.minesweeperEnabled=true;game.mines=new Uint8Array(8*8*16);game.revealedClues=new Set();
+  game.setSolid(3,3,7,true);game.setSolid(3,3,3,true);
+  game.mines[game.solidIndex(3,3,7)]=1;
+  const events=[];game.resolveGravity(events);
+
+  assert.equal(game.pieces.some(piece=>piece.id===1),false);
+  assert.deepEqual(game.lastFalls.filter(fall=>fall.pieceId===1).map(fall=>[
+    fall.from.z,fall.to.z,fall.perished,
+  ]),[[10,7,true]]);
+  assert.equal(game.solidAt(3,3,3),true,"the destroyed projectile must not reach the next support");
+  assert.match(events.join(" "),/stopped at the blast/);
 });
 
 test("a fall that punches through terrain resets damage at every destroyed cell", () => {
