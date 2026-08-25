@@ -89,12 +89,10 @@ public sealed class WorldRenderer : IDisposable
         return new Vector2(projected.X, projected.Y);
     }
 
-    public Int3? PickCell(Vector2 screen, bool[,,] solids, IReadOnlyList<ChessPiece> pieces)
+    public (Int3 Cell, float Distance)? PickCell(Vector2 screen, bool[,,] solids, IReadOnlyList<ChessPiece> pieces)
     {
         UpdateCamera();
-        var near = _worldViewport.Unproject(new Vector3(screen, 0f), _projection, _view, Matrix.Identity);
-        var far = _worldViewport.Unproject(new Vector3(screen, 1f), _projection, _view, Matrix.Identity);
-        var direction = Vector3.Normalize(far - near);
+        var (origin, direction) = ScreenRay(screen);
         var occupied = pieces.Select(piece => piece.Position).ToHashSet();
         Int3? best = null;
         var bestDistance = float.MaxValue;
@@ -108,13 +106,73 @@ public sealed class WorldRenderer : IDisposable
             {
                 var denominator = Vector3.Dot(direction, face.Normal);
                 if (denominator >= -.00001f) continue;
-                var distance = Vector3.Dot(face.Center - near, face.Normal) / denominator;
+                var distance = Vector3.Dot(face.Center - origin, face.Normal) / denominator;
                 if (distance <= 0f || distance >= bestDistance) continue;
-                var offset = near + direction * distance - face.Center;
+                var offset = origin + direction * distance - face.Center;
                 if (MathF.Abs(Vector3.Dot(offset, face.U)) > .5f ||
                     MathF.Abs(Vector3.Dot(offset, face.V)) > .5f) continue;
                 best = cell;
                 bestDistance = distance;
+            }
+        }
+        return best is { } cellHit ? (cellHit, bestDistance) : null;
+    }
+
+    public (ChessPiece Piece, float Distance)? PickPiece(Vector2 screen, IReadOnlyList<ChessPiece> pieces)
+    {
+        UpdateCamera();
+        var (origin, direction) = ScreenRay(screen);
+        ChessPiece? best = null;
+        var bestDistance = float.MaxValue;
+        foreach (var piece in pieces)
+        {
+            var distance = RayCylinderDistance(origin, direction, piece.Position, .22f, .9f);
+            if (distance >= bestDistance) continue;
+            best = piece;
+            bestDistance = distance;
+        }
+        return best is not null ? (best, bestDistance) : null;
+    }
+
+    private (Vector3 Origin, Vector3 Direction) ScreenRay(Vector2 screen)
+    {
+        var near = _worldViewport.Unproject(new Vector3(screen, 0f), _projection, _view, Matrix.Identity);
+        var far = _worldViewport.Unproject(new Vector3(screen, 1f), _projection, _view, Matrix.Identity);
+        return (_cameraPosition, Vector3.Normalize(far - near));
+    }
+
+    private static float RayCylinderDistance(Vector3 origin, Vector3 direction, Int3 position,
+        float radius, float height)
+    {
+        var best = float.MaxValue;
+        var ox = origin.X - position.X;
+        var oy = origin.Y - position.Y;
+        var a = direction.X * direction.X + direction.Y * direction.Y;
+        if (a > .000001f)
+        {
+            var b = 2f * (ox * direction.X + oy * direction.Y);
+            var c = ox * ox + oy * oy - radius * radius;
+            var discriminant = b * b - 4f * a * c;
+            if (discriminant >= 0f)
+            {
+                var root = MathF.Sqrt(discriminant);
+                foreach (var distance in new[] { (-b - root) / (2f * a), (-b + root) / (2f * a) })
+                {
+                    var z = origin.Z + direction.Z * distance;
+                    if (distance > 0f && z >= position.Z && z <= position.Z + height)
+                        best = MathF.Min(best, distance);
+                }
+            }
+        }
+        if (MathF.Abs(direction.Z) > .000001f)
+        {
+            foreach (var z in new[] { (float)position.Z, position.Z + height })
+            {
+                var distance = (z - origin.Z) / direction.Z;
+                var x = ox + direction.X * distance;
+                var y = oy + direction.Y * distance;
+                if (distance > 0f && x * x + y * y <= radius * radius)
+                    best = MathF.Min(best, distance);
             }
         }
         return best;

@@ -96,18 +96,18 @@ function executeMove(target){
 }
 function hitAt(point){
   if(!isHumanTurn()||model.winner||model.pendingPromotionPieceId!=null||transitionActive())return;
-  const moveRadius=Math.max(18,32*renderer.width/1050),pieceRadius=Math.max(10,18*renderer.width/1050),moves=model.selected?model.legalMoves():[];
+  const moveRadius=Math.max(18,32*renderer.width/1050),moves=model.selected?model.legalMoves():[];
   const moveHits=moves.map(target=>({target,screen:renderer.project(renderer.targetPoint(model,target))})).filter(h=>Math.hypot(point.x-h.screen.x,point.y-h.screen.y)<=moveRadius).sort((a,b)=>a.screen.depth-b.screen.depth);
   if(moveHits.length){executeMove(moveHits[0].target);return}
-  const pieceHits=model.pieces.map(piece=>({piece,screen:renderer.project({x:piece.position.x,y:piece.position.y,z:piece.position.z+.48})})).filter(h=>Math.hypot(point.x-h.screen.x,point.y-h.screen.y)<=pieceRadius).sort((a,b)=>a.screen.depth-b.screen.depth);
-  if(pieceHits.length)model.select(pieceHits[0].piece.id);else if(!toggleCellAt(point,false))model.clearSelection();syncUI();
+  const pieceHit=renderer.pickPiece(point,model.pieces),cellHit=cellAt(point);
+  if(pieceHit&&(!cellHit||pieceHit.distance<cellHit.distance))model.select(pieceHit.piece.id);else if(!toggleCellAt(cellHit,false))model.clearSelection();syncUI();
 }
 function cellAt(point){return renderer.pickCell(point,model.solids,model.pieces)}
-function toggleCellAt(point,mineFlag){if(!model.minesweeperEnabled)return false;const cell=cellAt(point);return !!cell&&model.toggleCellMark(cell,mineFlag)}
+function toggleCellAt(hit,mineFlag){return !!(model.minesweeperEnabled&&hit)&&model.toggleCellMark(hit.cell,mineFlag)}
 function point(e){const r=canvas.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}}
 canvas.addEventListener("pointerdown",e=>{if(e.button===1){e.preventDefault();toggleLayer();return}if(e.button!==0)return;canvas.setPointerCapture(e.pointerId);pointerStart=pointerLast=point(e);dragging=false});
 canvas.addEventListener("pointermove",e=>{if(!pointerStart)return;const here=point(e);if(Math.hypot(here.x-pointerStart.x,here.y-pointerStart.y)>5)dragging=true;if(dragging){renderer.yaw-=(here.x-pointerLast.x)*.009;renderer.elevation=Math.max(-90,Math.min(90,renderer.elevation+(here.y-pointerLast.y)*.18));renderer.updateCamera();syncUI()}pointerLast=here});
-canvas.addEventListener("pointerup",e=>{if(pointerStart&&!dragging)hitAt(point(e));pointerStart=pointerLast=null;dragging=false});canvas.addEventListener("pointercancel",()=>{pointerStart=pointerLast=null;dragging=false});canvas.addEventListener("contextmenu",e=>{e.preventDefault();if(!transitionActive()){const here=point(e),pieceRadius=Math.max(10,18*renderer.width/1050),overPiece=model.pieces.some(piece=>{const screen=renderer.project({x:piece.position.x,y:piece.position.y,z:piece.position.z+.48});return Math.hypot(here.x-screen.x,here.y-screen.y)<=pieceRadius});if(overPiece||!toggleCellAt(here,true))model.clearSelection();syncUI()}});
+canvas.addEventListener("pointerup",e=>{if(pointerStart&&!dragging)hitAt(point(e));pointerStart=pointerLast=null;dragging=false});canvas.addEventListener("pointercancel",()=>{pointerStart=pointerLast=null;dragging=false});canvas.addEventListener("contextmenu",e=>{e.preventDefault();if(!transitionActive()){const here=point(e),pieceHit=renderer.pickPiece(here,model.pieces),cellHit=cellAt(here);if(pieceHit&&(!cellHit||pieceHit.distance<cellHit.distance)||!toggleCellAt(cellHit,true))model.clearSelection();syncUI()}});
 canvas.addEventListener("wheel",e=>{e.preventDefault();if(renderer.layerFocus){renderer.focusLayer=Math.max(0,Math.min(14,renderer.focusLayer-Math.sign(e.deltaY)));ui.depth.value=renderer.focusLayer;ui.depthOut.value=layerLabel();ui.layer.querySelector("b").textContent=`MB  LAYER FOCUS: ${layerLabel()}`;dirty=true;return}renderer.zoom=Math.max(.55,Math.min(2.5,renderer.zoom*Math.exp(-e.deltaY*.0015)));renderer.updateCamera();syncUI()},{passive:false});
 
 function toggleLayer(){renderer.layerFocus=!renderer.layerFocus;renderer.focusLayer=Math.max(0,Math.min(14,renderer.focusLayer));ui.layer.setAttribute("aria-pressed",String(renderer.layerFocus));ui.layer.querySelector("b").textContent=`MB  LAYER FOCUS: ${renderer.layerFocus?layerLabel():"OFF"}`;ui.depth.disabled=!renderer.layerFocus;ui.depth.value=renderer.focusLayer;ui.depthOut.value=layerLabel();dirty=true}

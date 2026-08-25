@@ -511,36 +511,33 @@ public sealed class Game1 : Game
             }
         }
 
-        var clicked = FindClickedPiece(point);
-        if (clicked is not null) _model.Select(clicked.Id);
-        else if (!TryToggleCellMark(point, false)) _model.ClearSelection();
+        var clickedPiece = FindClickedPiece(point);
+        var clickedCell = FindClickedCell(point);
+        if (clickedPiece is { } pieceHit && (clickedCell is null || pieceHit.Distance < clickedCell.Value.Distance))
+            _model.Select(pieceHit.Piece.Id);
+        else if (!TryToggleCellMark(clickedCell, false)) _model.ClearSelection();
     }
 
-    private ChessPiece? FindClickedPiece(Point point) => _model.Pieces
-            .Select(piece =>
-            {
-                var screen = _world.Project(new Vector3(piece.Position.X, piece.Position.Y, piece.Position.Z + .48f));
-                return (Piece: piece, Distance: Vector2.Distance(point.ToVector2(), screen), Depth: screen.Y);
-            })
-            .Where(candidate => candidate.Distance < 18f)
-            .OrderBy(candidate => candidate.Distance).ThenByDescending(candidate => candidate.Depth)
-            .Select(candidate => candidate.Piece).FirstOrDefault();
+    private (ChessPiece Piece, float Distance)? FindClickedPiece(Point point) =>
+        _world.PickPiece(point.ToVector2(), _model.Pieces);
 
     private void HandleRightClick(Point point)
     {
-        if (_showHelp || _preImpactTerrain is not null || point.X is < 0 or >= 1050 ||
-            !IsHumanTurn || FindClickedPiece(point) is not null || !TryToggleCellMark(point, true))
+        var clickedPiece = FindClickedPiece(point);
+        var clickedCell = FindClickedCell(point);
+        if (_showHelp || _preImpactTerrain is not null || point.X is < 0 or >= 1050 || !IsHumanTurn ||
+            clickedPiece is { } pieceHit && (clickedCell is null || pieceHit.Distance < clickedCell.Value.Distance) ||
+            !TryToggleCellMark(clickedCell, true))
             _model.ClearSelection();
     }
 
-    private bool TryToggleCellMark(Point point, bool mineFlag)
+    private bool TryToggleCellMark((Int3 Cell, float Distance)? clicked, bool mineFlag)
     {
         if (!_model.MinesweeperEnabled) return false;
-        var cell = FindClickedCell(point);
-        return cell is { } target && _model.ToggleCellMark(target, mineFlag);
+        return clicked is { } target && _model.ToggleCellMark(target.Cell, mineFlag);
     }
 
-    private Int3? FindClickedCell(Point point) =>
+    private (Int3 Cell, float Distance)? FindClickedCell(Point point) =>
         _world.PickCell(point.ToVector2(), _model.Solids, _model.Pieces);
 
     private void StartTransition(int movingId, Int3 moveFrom, bool[,,] terrainBefore, bool[,,] minesBefore,
