@@ -102,8 +102,7 @@ public sealed class WorldRenderer : IDisposable
         for (var x = 0; x < 8; x++) for (var y = 0; y < 8; y++) for (var z = 0; z < 16; z++)
         {
             var cell = new Int3(x, y, z);
-            if (!RenderedSolid(solids, x, y, z) || occupied.Contains(cell) ||
-                occupied.Contains(cell + new Int3(0, 0, 1))) continue;
+            if (!RenderedSolid(solids, x, y, z) || occupied.Contains(cell)) continue;
 
             foreach (var face in CellFaces(cell, solids))
             {
