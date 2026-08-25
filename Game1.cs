@@ -247,6 +247,7 @@ public sealed class Game1 : Game
 
     private void ResetGame()
     {
+        _matchMode = MatchMode.PlayerVsBot;
         _model.Reset();
         _positionVersion++;
         _botDelayRemaining = BotMoveDelay;
@@ -258,7 +259,13 @@ public sealed class Game1 : Game
     {
         if (_matchMode == mode) return;
         _matchMode = mode;
-        ResetGame();
+        // Changing who controls each side must not alter the board or history.
+        // Versioning invalidates any search started under the previous mode.
+        _positionVersion++;
+        _botDelayRemaining = BotMoveDelay;
+        _botMoveUnavailable = false;
+        if (_model.PendingPromotionPieceId is not null && IsBotTurn)
+            _model.Promote(PieceKind.Queen);
     }
 
     private void Undo()
