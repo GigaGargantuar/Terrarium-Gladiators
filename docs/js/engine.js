@@ -172,23 +172,18 @@ export class TerrariumModel {
   spaceKnightOffsets(){const r=[];for(let axis=0;axis<3;axis++)for(const two of [-2,2])for(const a of [-1,1])for(const b of [-1,1]){const q=[a,b];q.splice(axis,0,two);r.push(v(q[0],q[1],q[2]))}return r}
 
   scoutPatterns(piece=this.selected){if(!piece)return[];const patterns=[];
-    if(piece.kind===Kind.PAWN){patterns.push("advance");if(this.plane!==Plane.XZ)patterns.push("capture")}
     if([Kind.ROOK,Kind.QUEEN,Kind.KING].includes(piece.kind))patterns.push("orthogonal");
     if([Kind.BISHOP,Kind.QUEEN,Kind.KING].includes(piece.kind))patterns.push("plane-diagonal");
-    if(piece.kind===Kind.KNIGHT)patterns.push("knight-012");
     if(piece.kind===Kind.TRISHOP||piece.promoted&&[Kind.ROOK,Kind.BISHOP,Kind.QUEEN,Kind.KING].includes(piece.kind))patterns.push("space-diagonal");
-    if(piece.kind===Kind.KNIGHT&&piece.promoted)patterns.push("knight-112");return patterns;
+    return patterns;
   }
-  scanDirections(piece,pattern){const[a,b]=this.planeAxes(this.plane);
-    if(pattern==="orthogonal")return[a,mul(a,-1),b,mul(b,-1)];
-    if(pattern==="plane-diagonal")return[add(a,b),add(a,mul(b,-1)),add(mul(a,-1),b),add(mul(a,-1),mul(b,-1))];
-    if(pattern==="space-diagonal")return this.spaceDiagonalDirections();
-    if(pattern==="knight-112")return this.spaceKnightOffsets();
-    if(pattern==="knight-012")return[add(mul(a,2),b),add(mul(a,2),mul(b,-1)),add(mul(a,-2),b),add(mul(a,-2),mul(b,-1)),add(mul(b,2),a),add(mul(b,2),mul(a,-1)),add(mul(b,-2),a),add(mul(b,-2),mul(a,-1))];
-    const forward=v(0,piece.side===Side.WHITE?1:-1,0);if(pattern==="capture")return this.plane===Plane.YZ?[add(forward,v(0,0,1)),add(forward,v(0,0,-1))]:[add(forward,v(1,0,0)),add(forward,v(-1,0,0))];return[this.plane===Plane.XY?forward:v(0,0,1)];
+  scanDirections(piece,pattern){
+    if(pattern==="orthogonal")return[v(1,0,0),v(-1,0,0),v(0,1,0),v(0,-1,0),v(0,0,1),v(0,0,-1)];
+    if(pattern==="plane-diagonal"){const directions=[];for(const x of[-1,0,1])for(const y of[-1,0,1])for(const z of[-1,0,1])if(Math.abs(x)+Math.abs(y)+Math.abs(z)===2)directions.push(v(x,y,z));return directions}
+    return this.spaceDiagonalDirections();
   }
-  scout(pattern,recordBotKnowledge=false){const piece=this.selected;if(!this.minesweeperEnabled||!piece||!this.scoutPatterns(piece).includes(pattern)||this.winner)return false;const dirs=this.scanDirections(piece,pattern),leapers=pattern.startsWith("knight")||piece.kind===Kind.PAWN,cells=[];
-    for(const d of dirs){for(let n=1;n<=18;n++){const p=add(piece.position,mul(d,n));if(p.x< -1||p.x>8||p.y< -1||p.y>8||p.z< -1||p.z>16)break;const encoded=key(p);if(this.mineAt(p.x,p.y,p.z)){if(recordBotKnowledge&&TerrariumModel.isInside(p)){this.botSafeMarks.delete(encoded);this.botMineFlags.add(encoded)}}else{this.revealedClues.add(encoded);cells.push(p);if(recordBotKnowledge&&TerrariumModel.isInside(p)&&this.isSolid(p)){this.botMineFlags.delete(encoded);this.botSafeMarks.add(encoded)}}if(leapers)break}}
+  scout(pattern,recordBotKnowledge=false){const piece=this.selected;if(!this.minesweeperEnabled||!piece||!this.scoutPatterns(piece).includes(pattern)||this.winner)return false;const dirs=this.scanDirections(piece,pattern),cells=[];
+    for(const d of dirs){const p=add(piece.position,d);if(p.x< -1||p.x>8||p.y< -1||p.y>8||p.z< -1||p.z>16)continue;const encoded=key(p);if(this.mineAt(p.x,p.y,p.z)){if(recordBotKnowledge&&TerrariumModel.isInside(p)){this.botSafeMarks.delete(encoded);this.botMineFlags.add(encoded)}}else{this.revealedClues.add(encoded);cells.push(p);if(recordBotKnowledge&&TerrariumModel.isInside(p)&&this.isSolid(p)){this.botMineFlags.delete(encoded);this.botSafeMarks.add(encoded)}}}
     const clues=cells.map(p=>this.clueAt(p)).filter(n=>n!=null),danger=clues.filter(n=>n>0).length,max=clues.length?Math.max(...clues):0;this.message=`${piece.side} ${piece.kind} scouted ${pattern}: ${clues.length} clues, ${danger} warned of mines (max ${max}). Scouting is free.`;return true;
   }
 
@@ -389,9 +384,9 @@ function deduceMineKnowledge(position){
 
 export function prepareBotTurn(position){
   if(!position.minesweeperEnabled||position.winner)return;
-  const originalPlane=position.plane,originalSelection=position.selectedId,side=position.turn;let scans=0;
-  for(const plane of planes){position.setPlane(plane);for(const piece of position.pieces.filter(piece=>piece.side===side)){if(!position.select(piece.id))continue;for(const pattern of [...position.scoutPatterns(piece)])if(position.scout(pattern,true))scans++}}
-  deduceMineKnowledge(position);position.setPlane(originalPlane);if(originalSelection==null||!position.select(originalSelection))position.clearSelection();
+  const originalSelection=position.selectedId,side=position.turn;let scans=0;
+  for(const piece of position.pieces.filter(piece=>piece.side===side)){if(!position.select(piece.id))continue;for(const pattern of [...position.scoutPatterns(piece)])if(position.scout(pattern,true))scans++}
+  deduceMineKnowledge(position);if(originalSelection==null||!position.select(originalSelection))position.clearSelection();
   position.message=`${side} bot used ${scans} free scans and now marks ${position.botSafeMarks.size} clear / ${position.botMineFlags.size} mined cells.`;
 }
 

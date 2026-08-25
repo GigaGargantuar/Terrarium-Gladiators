@@ -342,12 +342,9 @@ public sealed class TerrariumModel
     public IReadOnlyList<string> ScoutPatterns(ChessPiece? piece = null)
     {
         piece ??= Selected; if (piece is null) return Array.Empty<string>(); var result = new List<string>();
-        if (piece.Kind == PieceKind.Pawn) { result.Add("advance"); if (Plane != MovementPlane.XZ) result.Add("capture"); }
         if (piece.Kind is PieceKind.Rook or PieceKind.Queen or PieceKind.King) result.Add("orthogonal");
         if (piece.Kind is PieceKind.Bishop or PieceKind.Queen or PieceKind.King) result.Add("plane-diagonal");
-        if (piece.Kind == PieceKind.Knight) result.Add("knight-012");
         if (piece.Kind == PieceKind.Trishop || piece.Promoted && piece.Kind is PieceKind.Rook or PieceKind.Bishop or PieceKind.Queen or PieceKind.King) result.Add("space-diagonal");
-        if (piece.Kind == PieceKind.Knight && piece.Promoted) result.Add("knight-112");
         return result;
     }
 
@@ -358,21 +355,27 @@ public sealed class TerrariumModel
     private bool Scout(string pattern, bool recordBotKnowledge)
     {
         var piece = Selected; if (!MinesweeperEnabled || piece is null || !ScoutPatterns(piece).Contains(pattern) || Winner is not null) return false;
-        var (a, b) = PlaneAxes(Plane); IEnumerable<Int3> directions = pattern switch
+        IEnumerable<Int3> directions = pattern switch
         {
-            "orthogonal" => [a, a * -1, b, b * -1],
-            "plane-diagonal" => [a + b, a + b * -1, a * -1 + b, a * -1 + b * -1],
-            "space-diagonal" => SpaceDiagonalDirections(), "knight-112" => SpaceKnightOffsets(),
-            "knight-012" => [a * 2 + b, a * 2 + b * -1, a * -2 + b, a * -2 + b * -1, b * 2 + a, b * 2 + a * -1, b * -2 + a, b * -2 + a * -1],
-            "capture" when Plane == MovementPlane.YZ => [new Int3(0, piece.Side == Side.White ? 1 : -1, 1), new Int3(0, piece.Side == Side.White ? 1 : -1, -1)],
-            "capture" => [new Int3(1, piece.Side == Side.White ? 1 : -1, 0), new Int3(-1, piece.Side == Side.White ? 1 : -1, 0)],
-            _ => [Plane == MovementPlane.XY ? new Int3(0, piece.Side == Side.White ? 1 : -1, 0) : new Int3(0, 0, 1)]
+            "orthogonal" =>
+            [
+                new Int3(1, 0, 0), new Int3(-1, 0, 0),
+                new Int3(0, 1, 0), new Int3(0, -1, 0),
+                new Int3(0, 0, 1), new Int3(0, 0, -1)
+            ],
+            "plane-diagonal" =>
+                from x in new[] { -1, 0, 1 }
+                from y in new[] { -1, 0, 1 }
+                from z in new[] { -1, 0, 1 }
+                where Math.Abs(x) + Math.Abs(y) + Math.Abs(z) == 2
+                select new Int3(x, y, z),
+            _ => SpaceDiagonalDirections()
         };
-        var leaper = pattern.StartsWith("knight") || piece.Kind == PieceKind.Pawn; var clues = new List<int>();
-        foreach (var direction in directions) for (var distance = 1; distance <= 18; distance++)
+        var clues = new List<int>();
+        foreach (var direction in directions)
         {
-            var p = piece.Position + direction * distance;
-            if (p.X is < -1 or > 8 || p.Y is < -1 or > 8 || p.Z is < -1 or > 16) break;
+            var p = piece.Position + direction;
+            if (p.X is < -1 or > 8 || p.Y is < -1 or > 8 || p.Z is < -1 or > 16) continue;
             if (IsMine(p))
             {
                 if (recordBotKnowledge && IsInside(p))
@@ -391,7 +394,6 @@ public sealed class TerrariumModel
                 }
                 if (ClueAt(p) is { } clue) clues.Add(clue);
             }
-            if (leaper) break;
         }
         Message = $"{piece.Side} {piece.Kind} scouted {pattern}: {clues.Count} clues, {clues.Count(n => n > 0)} warned of mines (max {(clues.Count == 0 ? 0 : clues.Max())}). Scouting is free.";
         return true;

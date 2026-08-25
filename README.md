@@ -55,7 +55,7 @@ whenever a safe move exists. It always analyzes direct capture replies and
 strongly penalizes lines that lose more of its own material than they take, so
 it rescues threatened pieces and declines unfavorable trades.
 With Minesweeper enabled, the bot receives no hidden mine array. Before moving
-it freely scans with every available piece pattern, marks directly observed
+it freely scans every available one-cell Rook, Bishop, or Trishop pattern, marks directly observed
 clear/mined cells, and applies exact-count plus subset deduction to visible
 clues. Its move search simulates only confirmed mines; unknown mines remain
 unknown until scouting, deduction, or an explosion reveals them.
@@ -122,8 +122,12 @@ piece will break it; otherwise it is red.
   terrain layer. Its one-cell clue shell
   expands the 8×8×16 play volume to 10×10×18.
   Pregame zero-clue flood fills carve stable cavern systems beneath the surface.
-- A selected piece can freely scout with one chosen component of its movement
-  pattern. Scouting reveals number clues without consuming the turn.
+- A selected Rook-, Bishop-, or Trishop-moving piece can freely scout one cell
+  away using one chosen component of its movement pattern across all three
+  planes at once. Queen and King can
+  choose their Rook or Bishop component, while eligible promoted pieces also
+  gain the Trishop component. Pawns and Knights cannot scout. Scouting reveals
+  number clues without consuming the turn.
 - On bot turns, every available scouting pattern is used before search. The
   bot's blue clear markers and orange mine flags can be hidden without changing
   its accumulated knowledge.

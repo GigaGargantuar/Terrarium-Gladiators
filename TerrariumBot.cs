@@ -31,26 +31,20 @@ public sealed class TerrariumBot
     {
         if (!position.MinesweeperEnabled || position.Winner is not null) return;
 
-        var originalPlane = position.Plane;
         var originalSelection = position.SelectedId;
         var side = position.Turn;
         var scans = 0;
 
-        // Scouting is a free action. Use every pattern each living piece can
-        // perform on every movement plane, just as a human player may.
-        foreach (var plane in Enum.GetValues<MovementPlane>())
+        // Scouting is plane-agnostic: one use of a pattern covers its range-one
+        // neighborhood across XY, XZ, and YZ.
+        foreach (var piece in position.Pieces.Where(piece => piece.Side == side).ToList())
         {
-            position.SetPlane(plane);
-            foreach (var piece in position.Pieces.Where(piece => piece.Side == side).ToList())
-            {
-                if (!position.Select(piece.Id)) continue;
-                foreach (var pattern in position.ScoutPatterns(piece).ToList())
-                    if (position.ScoutForBot(pattern)) scans++;
-            }
+            if (!position.Select(piece.Id)) continue;
+            foreach (var pattern in position.ScoutPatterns(piece).ToList())
+                if (position.ScoutForBot(pattern)) scans++;
         }
 
         DeduceMineKnowledge(position);
-        position.SetPlane(originalPlane);
         if (originalSelection is { } selected && position.Select(selected)) { }
         else position.ClearSelection();
         position.SetMessage(
