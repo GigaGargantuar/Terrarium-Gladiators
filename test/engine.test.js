@@ -274,6 +274,8 @@ test("the Minesweeper addon is opt-in and builds a safe-top clue field", () => {
   game.setMinesweeperEnabled(true);
   assert.equal(game.minesweeperEnabled, true);
   assert.ok(game.mines.some(Boolean));
+  assert.equal(game.mines.reduce((total,mine)=>total+mine,0),Math.round(8*8*7*.2),
+    "density must use only the 448 cells below the safe top layer");
   for (let x=0;x<8;x++) for (let y=0;y<8;y++) {
     assert.equal(game.mineAt(x,y,7), false, "top terrain layer must be mine-free");
     assert.equal(game.solidAt(x,y,7), true, "caverns must not breach the starting surface");

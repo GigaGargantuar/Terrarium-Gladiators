@@ -108,8 +108,9 @@ piece will break it; otherwise it is red.
   every `(1,1,2)` permutation to their ordinary `(0,1,2)` jumps.
 - Empty-cell destinations from true-3D movement are shown as small cubes centered
   in their cells; plane-based destinations retain their oriented flat markers.
-- The opt-in Minesweeper addon generates a fresh randomized minefield at 15%
-  density for every match below a guaranteed-safe top terrain layer. Its one-cell clue shell
+- The opt-in Minesweeper addon generates a fresh randomized minefield with 90
+  mines—20% of the 448 eligible cells below the excluded, guaranteed-safe top
+  terrain layer. Its one-cell clue shell
   expands the 8×8×16 play volume to 10×10×18.
   Pregame zero-clue flood fills carve stable cavern systems beneath the surface.
 - A selected piece can freely scout with one chosen component of its movement

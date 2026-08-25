@@ -72,7 +72,9 @@ export class TerrariumModel {
   generateMinefield(seed) {
     this.mines = new Uint8Array(8*8*16); this.revealedClues = new Set();this.cavernProtected=new Set();this.disturbedTerrain=new Set();
     let state=seed>>>0,random=()=>{state=(Math.imul(state,1664525)+1013904223)>>>0;return state/0x100000000};
-    for(let x=0;x<8;x++)for(let y=0;y<8;y++)for(let z=0;z<7;z++)if(random()<.15)this.mines[this.solidIndex(x,y,z)]=1;
+    const eligible=[];for(let x=0;x<8;x++)for(let y=0;y<8;y++)for(let z=0;z<7;z++)eligible.push(this.solidIndex(x,y,z));
+    for(let i=eligible.length-1;i>0;i--){const swap=Math.floor(random()*(i+1));[eligible[i],eligible[swap]]=[eligible[swap],eligible[i]]}
+    const mineCount=Math.round(eligible.length*.2);for(let i=0;i<mineCount;i++)this.mines[eligible[i]]=1;
     // The one-cell shell makes the clue volume 10 x 10 x 18 (10 x 18 x 10
     // when written in the game's X/Z/Y display order).
     for(let x=-1;x<=8;x++)for(let y=-1;y<=8;y++)for(let z=-1;z<=16;z++)
