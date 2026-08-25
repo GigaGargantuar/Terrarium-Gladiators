@@ -138,6 +138,10 @@ piece will break it; otherwise it is red.
 - Moving a piece carries every contiguous piece above it as a tower. If that
   transported tower falls two or more cells onto terrain, its moved bottom
   piece is squashed by the pieces above it and the impact leaves a crater.
+- Pawns, Kings, Rooks, and Queens may move straight upward into cells currently
+  occupied by their own contiguous tower; those cells are vacated as the entire
+  carried section translates upward with the moving piece. An enemy immediately
+  above the mover is captured instead of being treated as carried cargo.
 - Sliding Rooks, Bishops, and Queens sweep their carried towers through the
   whole path, where terrain or any non-carried piece blocks an intermediate
   step. At the landing cells above a captured tower base, a same-side piece

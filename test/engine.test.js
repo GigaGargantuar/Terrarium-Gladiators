@@ -115,6 +115,40 @@ test("XZ and YZ pawn hops do not require a wall latch", () => {
   assert.equal(movedPawnMoves.some(move=>move.z===6),false);
 });
 
+test("straight-up movers carry pieces occupying their upward destinations", () => {
+  for(const kind of [Kind.PAWN,Kind.KING,Kind.ROOK,Kind.QUEEN]){
+    const base=tacticalPiece(1,Side.WHITE,kind,3,3,4);base.hasMoved=false;
+    const game=tacticalPosition([
+      base,
+      tacticalPiece(2,Side.WHITE,Kind.KNIGHT,3,3,5),
+      tacticalPiece(3,Side.BLACK,Kind.BISHOP,3,3,6),
+    ],Side.WHITE);
+    game.setSolid(3,3,3,true);game.plane=Plane.XZ;
+    const oneUp={x:3,y:3,z:5};
+    assert.ok(game.legalMoves(base).some(move=>move.x===oneUp.x&&move.y===oneUp.y&&move.z===oneUp.z),`${kind} should move upward through its carried tower`);
+    if(kind!==Kind.KING)assert.ok(game.legalMoves(base).some(move=>move.x===3&&move.y===3&&move.z===6),`${kind} should retain its two-cell upward option`);
+    game.select(base.id);assert.equal(game.tryMove(oneUp),true);
+    assert.deepEqual(game.pieces.map(piece=>piece.id).sort((a,b)=>a-b),[1,2,3],`${kind} must not capture a carried member`);
+    for(const pieceId of [2,3])assert.ok(game.lastFalls.some(fall=>fall.pieceId===pieceId&&fall.startsWithMove&&fall.to.z-fall.from.z===1),`${kind} should translate every carried member`);
+  }
+});
+
+test("an enemy directly above a straight-up mover is captured instead of carried", () => {
+  for(const kind of [Kind.PAWN,Kind.KING,Kind.ROOK,Kind.QUEEN]){
+    const base=tacticalPiece(1,Side.WHITE,kind,3,3,4);base.hasMoved=false;
+    const game=tacticalPosition([
+      base,
+      tacticalPiece(2,Side.BLACK,Kind.KNIGHT,3,3,5),
+      tacticalPiece(3,Side.WHITE,Kind.BISHOP,3,3,6),
+    ],Side.WHITE);
+    game.setSolid(3,3,3,true);game.plane=Plane.XZ;
+    const target={x:3,y:3,z:5};
+    assert.ok(game.legalMoves(base).some(move=>move.x===target.x&&move.y===target.y&&move.z===target.z));
+    game.select(base.id);assert.equal(game.tryMove(target),true);
+    assert.equal(game.pieces.some(piece=>piece.id===2),false,`${kind} should capture the enemy directly above it`);
+  }
+});
+
 test("moving the bottom piece carries its contiguous tower", () => {
   const game = new TerrariumModel(false);
   game.solids = new Uint8Array(8 * 8 * 16);

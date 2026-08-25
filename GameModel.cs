@@ -384,12 +384,19 @@ public sealed class TerrariumModel
         // Straight vertical hops are intrinsic XZ/YZ pawn moves and never need
         // a wall. Plane-specific climbs and upward excavation still use a latch.
         var wallLatched = IsWallLatched(piece.Position);
+        var carriedIds = UpwardCarriedIds(piece);
+        bool VacatedByTower(Int3 cell) => PieceAt(cell) is { } occupant && carriedIds.Contains(occupant.Id);
         var oneUp = piece.Position + new Int3(0, 0, 1);
-        if (IsEmpty(oneUp))
+        var directOccupant = PieceAt(oneUp);
+        if (directOccupant is not null && directOccupant.Side != piece.Side)
+        {
+            result.Add(oneUp);
+        }
+        else if (IsEmpty(oneUp) || VacatedByTower(oneUp))
         {
             result.Add(oneUp);
             var twoUp = piece.Position + new Int3(0, 0, 2);
-            if (!piece.HasMoved && IsEmpty(twoUp)) result.Add(twoUp);
+            if (!piece.HasMoved && (IsEmpty(twoUp) || VacatedByTower(twoUp))) result.Add(twoUp);
         }
         else if (wallLatched && IsSolid(oneUp))
         {
@@ -428,6 +435,14 @@ public sealed class TerrariumModel
             result.Add(above);
         }
         return result;
+    }
+
+    private HashSet<int> UpwardCarriedIds(ChessPiece piece)
+    {
+        var tower = TowerAbove(piece);
+        return tower.Count > 0 && tower[0].Side == piece.Side
+            ? tower.Select(member => member.Id).ToHashSet()
+            : [];
     }
 
     private bool CanTransportTower(ChessPiece piece, Int3 target)
@@ -540,6 +555,7 @@ public sealed class TerrariumModel
 
     private void AddSliding(ChessPiece piece, List<Int3> result, IEnumerable<Int3> directions)
     {
+        var carriedIds = UpwardCarriedIds(piece);
         foreach (var direction in directions)
         {
             for (var distance = 1; distance < 16; distance++)
@@ -552,7 +568,7 @@ public sealed class TerrariumModel
                     break;
                 }
                 var occupant = PieceAt(target);
-                if (occupant is null)
+                if (occupant is null || carriedIds.Contains(occupant.Id))
                 {
                     result.Add(target);
                     continue;
@@ -565,6 +581,7 @@ public sealed class TerrariumModel
 
     private void AddStepping(ChessPiece piece, List<Int3> result, IEnumerable<Int3> offsets)
     {
+        var carriedIds = UpwardCarriedIds(piece);
         foreach (var offset in offsets)
         {
             var target = piece.Position + offset;
@@ -575,7 +592,7 @@ public sealed class TerrariumModel
                 continue;
             }
             var occupant = PieceAt(target);
-            if (occupant is null || occupant.Side != piece.Side) result.Add(target);
+            if (occupant is null || carriedIds.Contains(occupant.Id) || occupant.Side != piece.Side) result.Add(target);
         }
     }
 
@@ -614,7 +631,9 @@ public sealed class TerrariumModel
         }
         else
         {
+            var carriedIds = UpwardCarriedIds(piece);
             var captured = PieceAt(target);
+            if (captured is not null && carriedIds.Contains(captured.Id)) captured = null;
             if (captured is null && piece.Kind == PieceKind.Pawn && previousEnPassantTarget == target &&
                 previousEnPassantPawnId is { } vulnerableId)
                 captured = Pieces.FirstOrDefault(candidate => candidate.Id == vulnerableId);

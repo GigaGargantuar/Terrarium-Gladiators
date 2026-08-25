@@ -198,9 +198,11 @@ export class TerrariumModel {
   }
 
   addWallPawnMoves(piece, result, forward) {
-    const wallLatched = this.isWallLatched(piece.position);
+    const wallLatched = this.isWallLatched(piece.position),carriedIds=this.upwardCarriedIds(piece),vacatedByTower=cell=>{const occupant=this.pieceAt(cell);return !!occupant&&carriedIds.has(occupant.id)};
     const oneUp = add(piece.position, v(0,0,1));
-    if (this.isEmpty(oneUp)) { result.push(oneUp); const twoUp = add(piece.position,v(0,0,2)); if (!piece.hasMoved && this.isEmpty(twoUp)) result.push(twoUp); }
+    const directOccupant=this.pieceAt(oneUp);
+    if(directOccupant&&directOccupant.side!==piece.side)result.push(oneUp);
+    else if (this.isEmpty(oneUp)||vacatedByTower(oneUp)) { result.push(oneUp); const twoUp = add(piece.position,v(0,0,2)); if (!piece.hasMoved&&(this.isEmpty(twoUp)||vacatedByTower(twoUp))) result.push(twoUp); }
     else if (wallLatched && this.isSolid(oneUp)) result.push(oneUp);
     if (this.plane !== Plane.YZ) return;
     for (const dz of [-1,1]) {
@@ -216,6 +218,8 @@ export class TerrariumModel {
     for (let z = piece.position.z + 1; z < 16; z++) { const above = this.pieceAt(v(piece.position.x,piece.position.y,z)); if (!above) break; result.push(above); }
     return result;
   }
+
+  upwardCarriedIds(piece){const tower=this.towerAbove(piece);return new Set(tower.length&&tower[0].side===piece.side?tower.map(member=>member.id):[])}
 
   canTransportTower(piece, target) {
     const destination = this.moveDestination(piece, target, this.isSolid(target));
@@ -258,8 +262,8 @@ export class TerrariumModel {
     const homeRank=king.side===Side.WHITE?0:7; if(king.position.y!==homeRank)return;
     for(const direction of [-1,1]){const rookX=direction<0?0:7,rook=this.pieceAt(v(rookX,king.position.y,king.position.z));if(!rook||rook.kind!==Kind.ROOK||rook.side!==king.side||rook.hasMoved)continue;let clear=true;for(let x=king.position.x+direction;x!==rookX;x+=direction)if(!this.isEmpty(v(x,king.position.y,king.position.z))){clear=false;break;}const destination=add(king.position,v(direction*2,0,0));if(clear&&this.isEmpty(destination))result.push(destination);}
   }
-  addSliding(piece,result,directions){for(const direction of directions){for(let distance=1;distance<16;distance++){const target=add(piece.position,mul(direction,distance));if(!TerrariumModel.isInside(target))break;if(this.isSolid(target)){if(this.canExcavate(piece,target))result.push(target);break;}const occupant=this.pieceAt(target);if(!occupant){result.push(target);continue;}if(occupant.side!==piece.side)result.push(target);break;}}}
-  addStepping(piece,result,offsets){for(const offset of offsets){const target=add(piece.position,offset);if(!TerrariumModel.isInside(target))continue;if(this.isSolid(target)){if(this.canExcavate(piece,target))result.push(target);continue;}const occupant=this.pieceAt(target);if(!occupant||occupant.side!==piece.side)result.push(target);}}
+  addSliding(piece,result,directions){const carriedIds=this.upwardCarriedIds(piece);for(const direction of directions){for(let distance=1;distance<16;distance++){const target=add(piece.position,mul(direction,distance));if(!TerrariumModel.isInside(target))break;if(this.isSolid(target)){if(this.canExcavate(piece,target))result.push(target);break;}const occupant=this.pieceAt(target);if(!occupant||carriedIds.has(occupant.id)){result.push(target);continue;}if(occupant.side!==piece.side)result.push(target);break;}}}
+  addStepping(piece,result,offsets){const carriedIds=this.upwardCarriedIds(piece);for(const offset of offsets){const target=add(piece.position,offset);if(!TerrariumModel.isInside(target))continue;if(this.isSolid(target)){if(this.canExcavate(piece,target))result.push(target);continue;}const occupant=this.pieceAt(target);if(!occupant||carriedIds.has(occupant.id)||occupant.side!==piece.side)result.push(target);}}
 
   tryMove(target) {
     this.lastFalls=[];this.lastTerrainChanges=[];this.lastPieceRemovals=[]; const piece=this.selected;
@@ -269,7 +273,7 @@ export class TerrariumModel {
     const releases=piece.kind===Kind.PAWN&&this.plane!==Plane.XY&&target.x===from.x&&target.y===from.y&&target.z>from.z&&!excavating;
     const castling=piece.kind===Kind.KING&&this.plane===Plane.XY&&target.y===from.y&&target.z===from.z&&Math.abs(target.x-from.x)===2;
     if(excavating){this.removeTerrain(target,events,piece.id);destination=this.moveDestination(piece,target,true);events.push(`${piece.kind} excavated ${TerrariumModel.cellName(target)}.`);if(!this.pieces.includes(piece)){this.message=events.join("  ");return this.finishMove()}}
-    else{let captured=this.pieceAt(target);if(!captured&&piece.kind===Kind.PAWN&&eq(previousTarget,target)&&previousPawn!=null)captured=this.pieces.find(p=>p.id===previousPawn);if(captured){this.destroyPiece(captured,`${piece.kind} captured ${captured.kind}.`);events.push(eq(previousTarget,target)?`En passant captured ${captured.side} ${captured.kind}.`:`Captured ${captured.side} ${captured.kind}.`);}}
+    else{const carriedIds=this.upwardCarriedIds(piece);let captured=this.pieceAt(target);if(captured&&carriedIds.has(captured.id))captured=null;if(!captured&&piece.kind===Kind.PAWN&&eq(previousTarget,target)&&previousPawn!=null)captured=this.pieces.find(p=>p.id===previousPawn);if(captured){this.destroyPiece(captured,`${piece.kind} captured ${captured.kind}.`);events.push(eq(previousTarget,target)?`En passant captured ${captured.side} ${captured.kind}.`:`Captured ${captured.side} ${captured.kind}.`);}}
     const transport=this.planTowerTransport(piece,destination),transported=transport.members.filter(m=>!eq(m.piece.position,m.destination)).length,movingIds=new Set([piece.id,...transport.members.map(m=>m.piece.id)]);
     for(const move of transport.members.filter(m=>!eq(m.piece.position,m.destination))){const collided=this.pieceAt(move.destination);if(!collided||movingIds.has(collided.id)||collided.side===move.piece.side)continue;this.destroyPiece(collided,`${move.piece.kind} in the moving tower captured ${collided.kind}.`);events.push(`Carried ${move.piece.side} ${move.piece.kind} captured ${collided.side} ${collided.kind}.`)}
     piece.position=destination;piece.hasMoved=true;
