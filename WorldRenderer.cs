@@ -89,11 +89,36 @@ public sealed class WorldRenderer : IDisposable
         return new Vector2(projected.X, projected.Y);
     }
 
-    public Vector3 ProjectCell(Int3 cell, bool[,,] solids)
+    public Int3? PickCell(Vector2 screen, bool[,,] solids, IReadOnlyList<ChessPiece> pieces)
     {
         UpdateCamera();
-        var projected = _worldViewport.Project(CellFaceGeometry(cell, solids).Center, _projection, _view, Matrix.Identity);
-        return projected;
+        var near = _worldViewport.Unproject(new Vector3(screen, 0f), _projection, _view, Matrix.Identity);
+        var far = _worldViewport.Unproject(new Vector3(screen, 1f), _projection, _view, Matrix.Identity);
+        var direction = Vector3.Normalize(far - near);
+        var occupied = pieces.Select(piece => piece.Position).ToHashSet();
+        Int3? best = null;
+        var bestDistance = float.MaxValue;
+
+        for (var x = 0; x < 8; x++) for (var y = 0; y < 8; y++) for (var z = 0; z < 16; z++)
+        {
+            var cell = new Int3(x, y, z);
+            if (!RenderedSolid(solids, x, y, z) || occupied.Contains(cell) ||
+                occupied.Contains(cell + new Int3(0, 0, 1))) continue;
+
+            foreach (var face in CellFaces(cell, solids))
+            {
+                var denominator = Vector3.Dot(direction, face.Normal);
+                if (denominator >= -.00001f) continue;
+                var distance = Vector3.Dot(face.Center - near, face.Normal) / denominator;
+                if (distance <= 0f || distance >= bestDistance) continue;
+                var offset = near + direction * distance - face.Center;
+                if (MathF.Abs(Vector3.Dot(offset, face.U)) > .5f ||
+                    MathF.Abs(Vector3.Dot(offset, face.V)) > .5f) continue;
+                best = cell;
+                bestDistance = distance;
+            }
+        }
+        return best;
     }
 
     private void UpdateCamera()
@@ -157,12 +182,12 @@ public sealed class WorldRenderer : IDisposable
     {
         var top = TerrainColor(x, y, z, 1.18f, 1f);
         var side = TerrainColor(x, y, z, .78f, 1f);
-        AddCellFace(x, y, z, Face.Top, top, false);
-        AddCellFace(x, y, z, Face.Bottom, side, false);
-        if (!Solid(solids, x + 1, y, z)) AddCellFace(x, y, z, Face.East, side, false);
-        if (!Solid(solids, x - 1, y, z)) AddCellFace(x, y, z, Face.West, side, false);
-        if (!Solid(solids, x, y + 1, z)) AddCellFace(x, y, z, Face.South, side, false);
-        if (!Solid(solids, x, y - 1, z)) AddCellFace(x, y, z, Face.North, side, false);
+        if (!RenderedSolid(solids, x, y, z + 1)) AddCellFace(x, y, z, Face.Top, top, false);
+        if (!RenderedSolid(solids, x, y, z - 1)) AddCellFace(x, y, z, Face.Bottom, side, false);
+        if (!RenderedSolid(solids, x + 1, y, z)) AddCellFace(x, y, z, Face.East, side, false);
+        if (!RenderedSolid(solids, x - 1, y, z)) AddCellFace(x, y, z, Face.West, side, false);
+        if (!RenderedSolid(solids, x, y + 1, z)) AddCellFace(x, y, z, Face.South, side, false);
+        if (!RenderedSolid(solids, x, y - 1, z)) AddCellFace(x, y, z, Face.North, side, false);
     }
 
     private void BuildLayerGuide()
@@ -183,36 +208,40 @@ public sealed class WorldRenderer : IDisposable
         foreach (var cell in model.SafeMarks)
         {
             if (!Solid(solids, cell.X, cell.Y, cell.Z) || LayerFocus && !InFocusWindow(cell.Z)) continue;
-            var geometry = CellFaceGeometry(cell, solids);
-            AddPlaneFrame(geometry.Center + geometry.Normal * .018f, geometry.U, geometry.V,
-                .56f, new Color(73, 235, 207, 235), .055f);
+            foreach (var geometry in CellFaces(cell, solids))
+                AddPlaneFrame(geometry.Center + geometry.Normal * .018f, geometry.U, geometry.V,
+                    .56f, new Color(73, 235, 207, 235), .055f);
         }
         foreach (var cell in model.MineFlags)
         {
             if (!Solid(solids, cell.X, cell.Y, cell.Z) || LayerFocus && !InFocusWindow(cell.Z)) continue;
-            var geometry = CellFaceGeometry(cell, solids);
-            var diagonalA = Vector3.Normalize(geometry.U + geometry.V);
-            var diagonalB = Vector3.Normalize(geometry.U - geometry.V);
-            var center = geometry.Center + geometry.Normal * .035f;
-            AddPlaneBox(center, diagonalA, diagonalB, new Vector3(.58f, .075f, .055f), new Color(247, 73, 97));
-            AddPlaneBox(center, diagonalB, diagonalA, new Vector3(.58f, .075f, .055f), new Color(247, 73, 97));
+            foreach (var geometry in CellFaces(cell, solids))
+            {
+                var diagonalA = Vector3.Normalize(geometry.U + geometry.V);
+                var diagonalB = Vector3.Normalize(geometry.U - geometry.V);
+                var center = geometry.Center + geometry.Normal * .035f;
+                AddPlaneBox(center, diagonalA, diagonalB, new Vector3(.58f, .075f, .055f), new Color(247, 73, 97));
+                AddPlaneBox(center, diagonalB, diagonalA, new Vector3(.58f, .075f, .055f), new Color(247, 73, 97));
+            }
         }
     }
 
-    private (Vector3 Center, Vector3 U, Vector3 V, Vector3 Normal) CellFaceGeometry(Int3 cell, bool[,,]? solids = null)
+    private bool RenderedSolid(bool[,,] solids, int x, int y, int z) =>
+        Solid(solids, x, y, z) && (!LayerFocus || InFocusWindow(z));
+
+    private IEnumerable<(Vector3 Center, Vector3 U, Vector3 V, Vector3 Normal)> CellFaces(Int3 cell, bool[,,] solids)
     {
-        var cellCenter = new Vector3(cell.X, cell.Y, cell.Z + .49f);
-        var towardCamera = _cameraPosition - cellCenter;
         var normals = new[] { Vector3.UnitX, -Vector3.UnitX, Vector3.UnitY, -Vector3.UnitY, Vector3.UnitZ, -Vector3.UnitZ };
-        var normal = normals.Where(candidate =>
-            {
-                if (solids is null) return true;
-                var neighbor = cell + new Int3((int)candidate.X, (int)candidate.Y, (int)candidate.Z);
-                return !Solid(solids, neighbor.X, neighbor.Y, neighbor.Z) ||
-                       LayerFocus && !InFocusWindow(neighbor.Z);
-            })
-            .OrderByDescending(candidate => Vector3.Dot(candidate, towardCamera)).FirstOrDefault();
-        if (normal == Vector3.Zero) normal = normals.OrderByDescending(candidate => Vector3.Dot(candidate, towardCamera)).First();
+        foreach (var normal in normals)
+        {
+            var neighbor = cell + new Int3((int)normal.X, (int)normal.Y, (int)normal.Z);
+            if (!RenderedSolid(solids, neighbor.X, neighbor.Y, neighbor.Z)) yield return CellFace(cell, normal);
+        }
+    }
+
+    private static (Vector3 Center, Vector3 U, Vector3 V, Vector3 Normal) CellFace(Int3 cell, Vector3 normal)
+    {
+        var cellCenter = new Vector3(cell.X, cell.Y, cell.Z + .5f);
         Vector3 u, v;
         if (normal.X != 0)
         {
@@ -226,7 +255,7 @@ public sealed class WorldRenderer : IDisposable
         {
             u = Vector3.UnitX; v = normal.Z > 0 ? Vector3.UnitY : -Vector3.UnitY;
         }
-        return (cellCenter + normal * .505f, u, v, normal);
+        return (cellCenter + normal * .5f, u, v, normal);
     }
 
     private void BuildMoveHints(TerrariumModel model, IReadOnlyList<Int3> moves)
@@ -436,8 +465,8 @@ public sealed class WorldRenderer : IDisposable
 
     private void AddCellFace(int x, int y, int z, Face face, Color color, bool transparent)
     {
-        var min = new Vector3(x - .49f, y - .49f, z);
-        var max = new Vector3(x + .49f, y + .49f, z + .98f);
+        var min = new Vector3(x - .5f, y - .5f, z);
+        var max = new Vector3(x + .5f, y + .5f, z + 1f);
         switch (face)
         {
             case Face.Top: AddQuad(new(min.X, min.Y, max.Z), new(max.X, min.Y, max.Z), new(max.X, max.Y, max.Z), new(min.X, max.Y, max.Z), color, transparent); break;

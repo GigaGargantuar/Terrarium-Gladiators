@@ -102,7 +102,7 @@ function hitAt(point){
   const pieceHits=model.pieces.map(piece=>({piece,screen:renderer.project({x:piece.position.x,y:piece.position.y,z:piece.position.z+.48})})).filter(h=>Math.hypot(point.x-h.screen.x,point.y-h.screen.y)<=pieceRadius).sort((a,b)=>a.screen.depth-b.screen.depth);
   if(pieceHits.length)model.select(pieceHits[0].piece.id);else if(!toggleCellAt(point,false))model.clearSelection();syncUI();
 }
-function cellAt(point){const radius=Math.max(13,23*renderer.width/1050),hits=[];for(let x=0;x<8;x++)for(let y=0;y<8;y++)for(let z=0;z<16;z++){const cell={x,y,z};if(!model.solidAt(x,y,z)||model.pieceAt(cell)||renderer.layerFocus&&(z<renderer.focusLayer||z>renderer.focusLayer+1))continue;const screen=renderer.project(renderer.cellPoint(cell,model.solids)),distance=Math.hypot(point.x-screen.x,point.y-screen.y);if(distance<=radius)hits.push({cell,screen,distance})}return hits.sort((a,b)=>a.distance-b.distance||a.screen.depth-b.screen.depth)[0]?.cell??null}
+function cellAt(point){return renderer.pickCell(point,model.solids,model.pieces)}
 function toggleCellAt(point,mineFlag){if(!model.minesweeperEnabled)return false;const cell=cellAt(point);return !!cell&&model.toggleCellMark(cell,mineFlag)}
 function point(e){const r=canvas.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}}
 canvas.addEventListener("pointerdown",e=>{if(e.button===1){e.preventDefault();toggleLayer();return}if(e.button!==0)return;canvas.setPointerCapture(e.pointerId);pointerStart=pointerLast=point(e);dragging=false});

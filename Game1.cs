@@ -540,23 +540,8 @@ public sealed class Game1 : Game
         return cell is { } target && _model.ToggleCellMark(target, mineFlag);
     }
 
-    private Int3? FindClickedCell(Point point)
-    {
-        Int3? best = null;
-        var bestDistance = 23f;
-        var bestDepth = float.MaxValue;
-        for (var x = 0; x < 8; x++) for (var y = 0; y < 8; y++) for (var z = 0; z < 16; z++)
-        {
-            var cell = new Int3(x, y, z);
-            if (!_model.Solids[x, y, z] || _model.PieceAt(cell) is not null ||
-                _depthFocus && (z < _selectedDepth || z > _selectedDepth + 1)) continue;
-            var screen = _world.ProjectCell(cell, _model.Solids);
-            var distance = Vector2.Distance(point.ToVector2(), new Vector2(screen.X, screen.Y));
-            if (distance > bestDistance || MathF.Abs(distance - bestDistance) < .01f && screen.Z >= bestDepth) continue;
-            best = cell; bestDistance = distance; bestDepth = screen.Z;
-        }
-        return best;
-    }
+    private Int3? FindClickedCell(Point point) =>
+        _world.PickCell(point.ToVector2(), _model.Solids, _model.Pieces);
 
     private void StartTransition(int movingId, Int3 moveFrom, bool[,,] terrainBefore, bool[,,] minesBefore,
         HashSet<Int3> cluesBefore, List<ChessPiece> piecesBefore)
