@@ -817,7 +817,7 @@ public sealed class Game1 : Game
         var panel = new Rectangle(290, 120, 860, 660);
         _spriteBatch.Draw(_pixel, panel, new Color(16, 25, 39)); Border(panel, new Color(72, 224, 207), 2);
         DrawText("THE TERRARIUM IN TRUE 3D", new Vector2(350, 171), new Color(82, 241, 216), 1.05f);
-        DrawText("The orthographic camera starts at 45° with adjustable orbit, elevation, Z, and zoom.", new Vector2(350, 213), new Color(175, 192, 188), .56f);
+        DrawText("The perspective camera starts at 45° with adjustable orbit, elevation, Z, and zoom.", new Vector2(350, 213), new Color(175, 192, 188), .56f);
         DrawHelpStep(1, 350, 283, "SELECT", "Click a sculpted piece, then choose a highlighted 3D destination.");
         DrawHelpStep(2, 350, 365, "MOVE THE CAMERA", "Drag X/Y to orbit, use Up / Down to shift Z, and scroll outside layer focus to zoom.");
         DrawHelpStep(3, 350, 447, "ISOLATE DEPTH", "Middle-click, then scroll through adjacent two-layer windows. Other layers are hidden.");

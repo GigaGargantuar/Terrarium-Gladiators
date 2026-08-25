@@ -80,8 +80,8 @@ function program(gl){
   const vs=compile(gl,gl.VERTEX_SHADER,`#version 300 es
     in vec3 a_position; in vec4 a_color; out vec4 v_color;
     uniform vec3 u_camera; uniform vec3 u_right; uniform vec3 u_up; uniform vec3 u_forward;
-    uniform vec2 u_halfSize; uniform vec2 u_depth;
-    void main(){vec3 d=a_position-u_camera;float depth=dot(d,u_forward);gl_Position=vec4(dot(d,u_right)/u_halfSize.x,dot(d,u_up)/u_halfSize.y,((depth-u_depth.x)/(u_depth.y-u_depth.x))*2.0-1.0,1.0);v_color=a_color;}`);
+    uniform vec2 u_perspective; uniform vec2 u_depth;
+    void main(){vec3 d=a_position-u_camera;float depth=dot(d,u_forward);float z=((u_depth.y+u_depth.x)/(u_depth.y-u_depth.x))*depth-(2.0*u_depth.y*u_depth.x/(u_depth.y-u_depth.x));gl_Position=vec4(dot(d,u_right)/u_perspective.x,dot(d,u_up)/u_perspective.y,z,depth);v_color=a_color;}`);
   const fs=compile(gl,gl.FRAGMENT_SHADER,`#version 300 es
     precision mediump float; in vec4 v_color; out vec4 outColor; void main(){outColor=v_color;}`);
   const p=gl.createProgram();gl.attachShader(p,vs);gl.attachShader(p,fs);gl.linkProgram(p);if(!gl.getProgramParameter(p,gl.LINK_STATUS))throw new Error(gl.getProgramInfoLog(p));return p;
@@ -92,7 +92,7 @@ export class WorldRenderer {
     this.canvas=canvas;this.gl=canvas.getContext("webgl2",{alpha:false,antialias:true,premultipliedAlpha:false});
     if(!this.gl)throw new Error("WebGL 2 is required to render the 3D arena.");
     const gl=this.gl;this.program=program(gl);this.buffer=gl.createBuffer();
-    this.locations={position:gl.getAttribLocation(this.program,"a_position"),color:gl.getAttribLocation(this.program,"a_color"),camera:gl.getUniformLocation(this.program,"u_camera"),right:gl.getUniformLocation(this.program,"u_right"),up:gl.getUniformLocation(this.program,"u_up"),forward:gl.getUniformLocation(this.program,"u_forward"),halfSize:gl.getUniformLocation(this.program,"u_halfSize"),depth:gl.getUniformLocation(this.program,"u_depth")};
+    this.locations={position:gl.getAttribLocation(this.program,"a_position"),color:gl.getAttribLocation(this.program,"a_color"),camera:gl.getUniformLocation(this.program,"u_camera"),right:gl.getUniformLocation(this.program,"u_right"),up:gl.getUniformLocation(this.program,"u_up"),forward:gl.getUniformLocation(this.program,"u_forward"),perspective:gl.getUniformLocation(this.program,"u_perspective"),depth:gl.getUniformLocation(this.program,"u_depth")};
     this.yaw=0;this.elevation=45;this.heightOffset=0;this.zoom=1;this.layerFocus=false;this.focusLayer=8;this.width=1;this.height=1;this.pixelRatio=1;this.updateCamera();
     gl.useProgram(this.program);gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);gl.enableVertexAttribArray(this.locations.position);gl.vertexAttribPointer(this.locations.position,3,gl.FLOAT,false,28,0);gl.enableVertexAttribArray(this.locations.color);gl.vertexAttribPointer(this.locations.color,4,gl.FLOAT,false,28,12);
     gl.enable(gl.DEPTH_TEST);gl.depthFunc(gl.LEQUAL);gl.enable(gl.CULL_FACE);gl.cullFace(gl.BACK);gl.frontFace(gl.CCW);
@@ -104,9 +104,9 @@ export class WorldRenderer {
   updateCamera(){
     this.target=vec(3.5,3.5,7.4+this.heightOffset);const distance=18.384777,elevation=Math.max(-90,Math.min(90,this.elevation))*Math.PI/180,horizontal=vec(Math.sin(this.yaw),-Math.cos(this.yaw),0),radial=add(mul(horizontal,Math.cos(elevation)),vec(0,0,Math.sin(elevation)));
     this.camera=add(this.target,mul(radial,distance));this.forward=mul(radial,-1);this.right=vec(Math.cos(this.yaw),Math.sin(this.yaw),0);this.up=norm(cross(this.right,this.forward));this.clueAway=mul(horizontal,-1);
-    this.orthoHeight=17.6/Math.max(.55,Math.min(2.5,this.zoom));this.orthoWidth=this.orthoHeight*(this.width/this.height);
+    this.aspect=this.width/this.height;this.tanHalfFov=8.8/(distance*Math.max(.55,Math.min(2.5,this.zoom)));
   }
-  project(p){const d=sub(p,this.camera),x=dot(d,this.right)/(this.orthoWidth/2),y=dot(d,this.up)/(this.orthoHeight/2);return{x:(x*.5+.5)*this.width,y:(.5-y*.5)*this.height,depth:dot(d,this.forward)}}
+  project(p){const d=sub(p,this.camera),depth=dot(d,this.forward),x=dot(d,this.right)/(depth*this.tanHalfFov*this.aspect),y=dot(d,this.up)/(depth*this.tanHalfFov);return{x:(x*.5+.5)*this.width,y:(.5-y*.5)*this.height,depth}}
   isTrue3DDestination(model,target){const piece=model.selected;if(!piece)return false;return target.x!==piece.position.x&&target.y!==piece.position.y&&target.z!==piece.position.z}
   targetPoint(model,target){const excavation=model.isExcavationTarget(target);return this.isTrue3DDestination(model,target)&&!excavation?vec(target.x,target.y,target.z+.49):this.moveGeometry(model,target,excavation).center}
   moveGeometry(model,target,excavation){
@@ -169,6 +169,6 @@ export class WorldRenderer {
   render(model,solids,pieces,moves,mines=model.mines,revealedClues=model.revealedClues){
     this.resize();const mesh=new MeshBuilder();this.buildTerrain(mesh,solids);this.buildClues(mesh,model,solids,mines,revealedClues);this.buildHints(mesh,model,moves);for(const p of [...pieces].sort((a,b)=>dot(sub(b.position,this.camera),sub(b.position,this.camera))-dot(sub(a.position,this.camera),sub(a.position,this.camera))))this.buildPiece(mesh,p,p.piece.id===model.selectedId);
     mesh.transparent.sort((a,b)=>dot(sub(b.center,this.camera),sub(b.center,this.camera))-dot(sub(a.center,this.camera),sub(a.center,this.camera)));
-    const gl=this.gl,l=this.locations;gl.clearColor(7/255,11/255,20/255,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.useProgram(this.program);gl.uniform3f(l.camera,this.camera.x,this.camera.y,this.camera.z);gl.uniform3f(l.right,this.right.x,this.right.y,this.right.z);gl.uniform3f(l.up,this.up.x,this.up.y,this.up.z);gl.uniform3f(l.forward,this.forward.x,this.forward.y,this.forward.z);gl.uniform2f(l.halfSize,this.orthoWidth/2,this.orthoHeight/2);gl.uniform2f(l.depth,.1,80);this.drawTriangles(mesh.opaque);this.drawTriangles(mesh.transparent,true);
+    const gl=this.gl,l=this.locations;gl.clearColor(7/255,11/255,20/255,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.useProgram(this.program);gl.uniform3f(l.camera,this.camera.x,this.camera.y,this.camera.z);gl.uniform3f(l.right,this.right.x,this.right.y,this.right.z);gl.uniform3f(l.up,this.up.x,this.up.y,this.up.z);gl.uniform3f(l.forward,this.forward.x,this.forward.y,this.forward.z);gl.uniform2f(l.perspective,this.tanHalfFov*this.aspect,this.tanHalfFov);gl.uniform2f(l.depth,.1,80);this.drawTriangles(mesh.opaque);this.drawTriangles(mesh.transparent,true);
   }
 }

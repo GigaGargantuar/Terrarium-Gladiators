@@ -72,7 +72,7 @@ piece will break it; otherwise it is red.
 - Up / Down arrows: translate the camera along world Z
 - `Q`, `E`: rotate the camera by 90 degrees
 - Middle mouse button: toggle two-layer focus
-- Mouse wheel outside layer focus: zoom the orthographic camera in or out
+- Mouse wheel outside layer focus: zoom the perspective camera in or out
 - Mouse wheel while layer focus is active: select adjacent windows from Z0–Z1
   through Z14–Z15; every other terrain layer is hidden. Chess pieces remain
   fully visible on every layer, and legal destinations remain visible.
@@ -156,7 +156,7 @@ piece will break it; otherwise it is red.
   enforced in this prototype.
 
 The world renderer uses true 3D geometry rather than screen-space isometric
-tiles. Its orthographic camera begins side-aligned at 45 degrees, supports
+tiles. Its perspective camera begins side-aligned at 45 degrees, supports
 continuous horizontal orbit and a pole-safe 180-degree vertical orbit from
 underneath to overhead, translates along world Z with the arrow keys, and zooms
 with the mouse wheel outside layer focus. Mine clues are centered in their cells

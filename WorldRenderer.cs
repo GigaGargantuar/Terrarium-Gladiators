@@ -101,9 +101,11 @@ public sealed class WorldRenderer : IDisposable
         _cameraRight = right;
         _cameraUp = Vector3.Normalize(Vector3.Cross(radial, right));
         _view = Matrix.CreateLookAt(_cameraPosition, target, _cameraUp);
-        var height = 17.6f / MathHelper.Clamp(Zoom, .55f, 2.5f);
-        var width = height * _worldViewport.AspectRatio;
-        _projection = Matrix.CreateOrthographic(width, height, .1f, 80f);
+        // Match the former 17.6-unit orthographic framing at the orbit target,
+        // then narrow or widen the perspective field of view for zoom.
+        var zoom = MathHelper.Clamp(Zoom, .55f, 2.5f);
+        var fieldOfView = 2f * MathF.Atan(8.8f / (orbitDistance * zoom));
+        _projection = Matrix.CreatePerspectiveFieldOfView(fieldOfView, _worldViewport.AspectRatio, .1f, 80f);
     }
 
     private void BuildTerrain(bool[,,] solids)
