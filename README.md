@@ -123,6 +123,10 @@ piece will break it; otherwise it is red.
 - If an impact punches through unsupported terrain, the destroyed cell becomes
   the start of a new fall segment. Distance and damage reset there, then apply
   normally to each later impact.
+- Falling pieces behave as vertical projectiles: every collision is resolved at
+  contact, then any resulting cave-in or terrain fall settles before the next
+  projectile segment is traced. Multi-impact falls therefore update the visible
+  environment several times instead of committing all damage at the end.
 - A piece falling four or more cells also perishes unless another piece breaks
   its fall.
 - Moving a piece carries every contiguous piece above it as a tower. If that

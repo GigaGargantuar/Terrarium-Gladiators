@@ -338,7 +338,7 @@ test("a fall that punches through terrain resets damage at every destroyed cell"
   assert.deepEqual(game.lastFalls.filter(fall=>fall.pieceId===1).map(fall=>[fall.from.z,fall.to.z,fall.perished]),[
     [10,7,false],[7,3,false],[3,0,false],
   ]);
-  assert.deepEqual(game.lastTerrainBreaks.map(change=>[change.cell.z,change.pieceId]),[[7,1],[3,1]]);
+  assert.deepEqual(game.lastTerrainChanges.map(change=>[change.cell.z,change.solid,change.pieceId]),[[7,false,1],[3,false,1]]);
 });
 
 test("fall damage continues normally after a reset and can kill on a later segment", () => {
@@ -352,4 +352,20 @@ test("fall damage continues normally after a reset and can kill on a later segme
     [10,7,false],[7,2,true],
   ]);
   assert.match(events.join(" "),/perished after 4 cells/);
+});
+
+test("the environment updates between projectile impacts", () => {
+  const game=tacticalPosition([tacticalPiece(1,Side.WHITE,Kind.ROOK,3,3,10)],Side.WHITE);
+  game.cavernProtected=new Set(["3,3,6"]);game.disturbedTerrain=new Set();game.lastTerrainChanges=[];
+  for(let x=2;x<=4;x++)for(let y=2;y<=4;y++)game.setSolid(x,y,6,true);
+  game.setSolid(3,3,7,true);
+  const events=[];game.resolveGravity(events);
+
+  // Z7 is the projectile collision. Its disturbance then releases the protected
+  // Z6 shelf before the projectile column is traced again.
+  assert.deepEqual(game.lastTerrainChanges.slice(0,3).map(change=>[
+    change.cell.z,change.solid,change.pieceId,change.contact.z,
+  ]),[[7,false,1,7],[6,false,1,7],[0,true,1,7]]);
+  assert.match(events.join(" "),/shelf collapsed/);
+  assert.equal(game.pieces.some(piece=>piece.id===1),false,"the updated environment changes the next collision");
 });

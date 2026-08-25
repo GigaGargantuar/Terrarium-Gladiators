@@ -33,7 +33,7 @@ public sealed class ChessPiece
 
 public sealed record PieceFallEvent(int PieceId, Side Side, PieceKind Kind, Int3 From, Int3 To,
     bool Perished, bool StartsWithMove = false);
-public sealed record TerrainBreakEvent(Int3 Cell, int? PieceId);
+public sealed record TerrainChangeEvent(Int3 Cell, bool Solid, int? PieceId, Int3 Contact);
 
 public sealed class TerrariumModel
 {
@@ -59,7 +59,7 @@ public sealed class TerrariumModel
     public string Message { get; private set; } = string.Empty;
     public int? SelectedId { get; private set; }
     public List<PieceFallEvent> LastFalls { get; } = new();
-    public List<TerrainBreakEvent> LastTerrainBreaks { get; } = new();
+    public List<TerrainChangeEvent> LastTerrainChanges { get; } = new();
     public int? PendingPromotionPieceId { get; private set; }
     private int? EnPassantPawnId { get; set; }
     private Int3? EnPassantTarget { get; set; }
@@ -116,7 +116,7 @@ public sealed class TerrariumModel
         PendingPromotionPieceId = null;
         Message = "White to move — select a piece, then a glowing cell.";
         LastFalls.Clear();
-        LastTerrainBreaks.Clear();
+        LastTerrainChanges.Clear();
         _history.Clear();
     }
 
@@ -576,7 +576,7 @@ public sealed class TerrariumModel
     public bool TryMove(Int3 target)
     {
         LastFalls.Clear();
-        LastTerrainBreaks.Clear();
+        LastTerrainChanges.Clear();
         var piece = Selected;
         if (piece is null || !LegalMoves(piece).Contains(target))
         {
@@ -713,10 +713,10 @@ public sealed class TerrariumModel
 
     private static bool OnEnemyBackRank(ChessPiece piece) => piece.Side == Side.White ? piece.Position.Y == 7 : piece.Position.Y == 0;
 
-    private bool RemoveTerrain(Int3 p, List<string> events, int? pieceId = null)
+    private bool RemoveTerrain(Int3 p, List<string> events, int? pieceId = null, Int3? contact = null)
     {
         if (!IsSolid(p)) return false;
-        Solids[p.X, p.Y, p.Z] = false; LastTerrainBreaks.Add(new TerrainBreakEvent(p, pieceId)); DisturbedTerrain.Add(p); RevealedClues.Add(p);
+        Solids[p.X, p.Y, p.Z] = false; LastTerrainChanges.Add(new TerrainChangeEvent(p, false, pieceId, contact ?? p)); DisturbedTerrain.Add(p); RevealedClues.Add(p);
         if (IsMine(p)) DetonateMine(p, events);
         return true;
     }
@@ -737,14 +737,17 @@ public sealed class TerrariumModel
 
     private void ResolveGravity(List<string> events, int? releasedPawnId = null)
     {
+        int? environmentPieceId = null;
+        Int3? environmentContact = null;
         // Work bottom-up until terrain and every piece column are stable.
-        for (var pass = 0; pass < 64; pass++)
+        for (var pass = 0; pass < 256; pass++)
         {
-            // Finish piece fall segments before resolving secondary cave-ins.
-            // When an impact destroys its support cell, the survivor is placed
-            // in that cell; the next pass therefore measures a fresh fall from
-            // the last destroyed cell instead of accumulating the earlier drop.
-            var changed = false;
+            // Treat each falling tower as a projectile. Resolve the environment
+            // cascade caused by its last collision before tracing its next fall.
+            var changed = ResolveTerrainGravity(events, environmentPieceId, environmentContact);
+            if (changed) continue;
+            environmentPieceId = null;
+            environmentContact = null;
             for (var x = 0; x < 8 && !changed; x++)
             for (var y = 0; y < 8 && !changed; y++)
             {
@@ -787,8 +790,11 @@ public sealed class TerrariumModel
                         var impactBaseZ = Math.Max(0, supportZ);
                         if (supportZ >= 0 && Solids[x, y, supportZ])
                         {
-                            RemoveTerrain(new Int3(x, y, supportZ), events, bottom.Id);
-                            events.Add($"Impact shattered cube {CellName(new Int3(x, y, supportZ))}!");
+                            var contact = new Int3(x, y, supportZ);
+                            RemoveTerrain(contact, events, bottom.Id, contact);
+                            environmentPieceId = bottom.Id;
+                            environmentContact = contact;
+                            events.Add($"Impact shattered cube {CellName(contact)}!");
                         }
                         else if (impactPiece is not null)
                         {
@@ -811,6 +817,8 @@ public sealed class TerrariumModel
                             var settledBaseZ = craterZ >= 0 ? craterZ : crushedBottom.Position.Z;
                             if (craterZ >= 0)
                             {
+                                environmentPieceId = bottom.Id;
+                                environmentContact = new Int3(x, y, craterZ);
                                 events.Add($"The squashed piece left a crater at {CellName(new Int3(x, y, craterZ))}!");
                             }
 
@@ -859,12 +867,11 @@ public sealed class TerrariumModel
                     break;
                 }
             }
-            if (!changed) changed = ResolveTerrainGravity(events);
             if (!changed || Winner is not null) break;
         }
     }
 
-    private bool ResolveTerrainGravity(List<string> events)
+    private bool ResolveTerrainGravity(List<string> events, int? pieceId = null, Int3? contact = null)
     {
         // A flat solid 3x3 shelf with an entirely empty 3x3 layer beneath it
         // loses its center cube to gravity. One cell is resolved per pass so
@@ -886,7 +893,7 @@ public sealed class TerrariumModel
             var disturbedNearby = DisturbedTerrain.Any(p => Math.Max(Math.Max(Math.Abs(p.X - x), Math.Abs(p.Y - y)), Math.Abs(p.Z - z)) <= 1);
             if (CavernProtected.Contains(center) && !disturbedNearby) continue;
 
-            RemoveTerrain(center, events);
+            RemoveTerrain(center, events, pieceId, contact ?? center);
             var hitZ = -1;
             ChessPiece? hitPiece = null;
             for (var scan = z - 1; scan >= 0; scan--)
@@ -904,7 +911,7 @@ public sealed class TerrariumModel
             {
                 DestroyPiece(hitPiece, $"{hitPiece.Kind} was squashed by a falling cube cell.");
                 events.Add($"Falling terrain squashed {hitPiece.Side} {hitPiece.Kind}!");
-                var craterZ = ExcavateCraterBelow(x, y, hitZ - 1, events);
+                var craterZ = ExcavateCraterBelow(x, y, hitZ - 1, events, pieceId);
                 landingZ = craterZ >= 0 ? craterZ : hitZ;
                 if (craterZ >= 0)
                     events.Add($"The crushed piece left a crater at {CellName(new Int3(x, y, craterZ))}!");
@@ -914,6 +921,7 @@ public sealed class TerrariumModel
                 landingZ = Math.Max(0, hitZ + 1);
             }
             Solids[x, y, landingZ] = true;
+            LastTerrainChanges.Add(new TerrainChangeEvent(new Int3(x, y, landingZ), true, pieceId, contact ?? center));
             events.Add($"Unsupported 3×3 shelf collapsed: center cube fell {z - landingZ} cell(s).");
             return true;
         }
@@ -998,7 +1006,7 @@ public sealed class TerrariumModel
         EnPassantTarget = snapshot.EnPassantTarget;
         PendingPromotionPieceId = snapshot.PendingPromotionPieceId;
         LastFalls.Clear();
-        LastTerrainBreaks.Clear();
+        LastTerrainChanges.Clear();
         return true;
     }
 

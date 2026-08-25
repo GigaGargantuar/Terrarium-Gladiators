@@ -39,7 +39,8 @@ function startTransition(movingId,moveFrom,terrainBefore,piecesBefore){
     falls.push({fall:{...fall,from:{...fall.from},to:{...fall.to}},delay,duration,elapsed:0});delays.set(fall.pieceId,delay+duration);
   }
   impactTime=Math.max(.08,falls.length?Math.max(...falls.map(f=>f.delay+f.duration)):.08);dirty=true;
-  for(const terrainBreak of model.lastTerrainBreaks??[]){const candidates=falls.filter(animation=>animation.fall.pieceId===terrainBreak.pieceId),contact=candidates.find(animation=>same(animation.fall.to,terrainBreak.cell))??candidates.find(animation=>animation.fall.to.z<=terrainBreak.cell.z+1)??candidates.at(-1),at=contact?contact.delay+contact.duration*.9:terrainBreak.pieceId===movingId?Math.max(.04,moveDuration*.9):impactTime;terrainBreaks.push({cell:{...terrainBreak.cell},at,applied:false})}
+  const contactBreakCounts=new Map();
+  for(const terrainChange of model.lastTerrainChanges??[]){const contactCell=terrainChange.contact??terrainChange.cell,candidates=falls.filter(animation=>animation.fall.pieceId===terrainChange.pieceId),contact=candidates.find(animation=>same(animation.fall.to,contactCell))??candidates.find(animation=>animation.fall.to.z<=contactCell.z+1)??candidates.at(-1),contactKey=`${terrainChange.pieceId}:${contactCell.x},${contactCell.y},${contactCell.z}`,stagger=(contactBreakCounts.get(contactKey)||0)*.045;contactBreakCounts.set(contactKey,(contactBreakCounts.get(contactKey)||0)+1);const at=(contact?contact.delay+contact.duration*.9:terrainChange.pieceId===movingId?Math.max(.04,moveDuration*.9):impactTime)+stagger;terrainBreaks.push({cell:{...terrainChange.cell},solid:terrainChange.solid,at,applied:false})}
   if(terrainBreaks.length)impactTime=Math.max(impactTime,Math.max(...terrainBreaks.map(change=>change.at+.08)));
 }
 function transitionActive(){return preImpactSolids!==null}
@@ -54,7 +55,7 @@ function renderPieces(){
   return result;
 }
 function finishTransition(){preImpactSolids=null;preImpactPieces=null;falls=[];terrainBreaks=[];dirty=true;syncUI();if(pendingBot&&isBotTurn()&&!model.winner&&model.pendingPromotionPieceId==null){pendingBot=false;queueBot()}}
-function updateTransition(dt){if(!transitionActive())return;transitionElapsed+=dt;for(const animation of falls)animation.elapsed+=dt;for(const change of terrainBreaks)if(!change.applied&&transitionElapsed>=change.at){change.applied=true;preImpactSolids[model.solidIndex(change.cell.x,change.cell.y,change.cell.z)]=0}impactTime-=dt;if(impactTime<=0)finishTransition();dirty=true}
+function updateTransition(dt){if(!transitionActive())return;transitionElapsed+=dt;for(const animation of falls)animation.elapsed+=dt;for(const change of terrainBreaks)if(!change.applied&&transitionElapsed>=change.at){change.applied=true;preImpactSolids[model.solidIndex(change.cell.x,change.cell.y,change.cell.z)]=change.solid?1:0}impactTime-=dt;if(impactTime<=0)finishTransition();dirty=true}
 
 function syncUI(){
   const botThinking=!ui.thinking.hidden;ui.turn.textContent=model.winner?`${sideName(model.winner)} WINS`:botThinking?`${sideName(model.turn)} BOT THINKING`:`${sideName(model.turn)} TO MOVE`;ui.turn.classList.toggle("black",model.turn===Side.BLACK&&!model.winner);

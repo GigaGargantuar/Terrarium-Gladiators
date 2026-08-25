@@ -25,6 +25,7 @@ public sealed class Game1 : Game
     private sealed class TerrainBreakVisual
     {
         public required Int3 Cell { get; init; }
+        public bool Solid { get; init; }
         public float At { get; init; }
         public bool Applied { get; set; }
     }
@@ -149,7 +150,7 @@ public sealed class Game1 : Game
             foreach (var change in _terrainBreaks.Where(change => !change.Applied && _transitionElapsed >= change.At))
             {
                 change.Applied = true;
-                _preImpactTerrain[change.Cell.X, change.Cell.Y, change.Cell.Z] = false;
+                _preImpactTerrain[change.Cell.X, change.Cell.Y, change.Cell.Z] = change.Solid;
             }
             if (_transitionElapsed >= _impactTime)
             {
@@ -524,14 +525,18 @@ public sealed class Game1 : Game
             delays[fall.PieceId] = delay + duration;
         }
         _impactTime = Math.Max(.08f, _falls.Count == 0 ? .08f : _falls.Max(fall => fall.Delay + fall.Duration));
-        foreach (var terrainBreak in _model.LastTerrainBreaks)
+        var contactBreakCounts = new Dictionary<(int?, Int3), int>();
+        foreach (var terrainBreak in _model.LastTerrainChanges)
         {
             var candidates = _falls.Where(animation => animation.Fall.PieceId == terrainBreak.PieceId).ToList();
-            var contact = candidates.FirstOrDefault(animation => animation.Fall.To == terrainBreak.Cell) ??
-                candidates.FirstOrDefault(animation => animation.Fall.To.Z <= terrainBreak.Cell.Z + 1) ?? candidates.LastOrDefault();
-            var at = contact is not null ? contact.Delay + contact.Duration * .9f :
-                terrainBreak.PieceId == movingId ? Math.Max(.04f, moveDuration * .9f) : _impactTime;
-            _terrainBreaks.Add(new TerrainBreakVisual { Cell = terrainBreak.Cell, At = at });
+            var contact = candidates.FirstOrDefault(animation => animation.Fall.To == terrainBreak.Contact) ??
+                candidates.FirstOrDefault(animation => animation.Fall.To.Z <= terrainBreak.Contact.Z + 1) ?? candidates.LastOrDefault();
+            var key = (terrainBreak.PieceId, terrainBreak.Contact);
+            var stagger = contactBreakCounts.GetValueOrDefault(key) * .045f;
+            contactBreakCounts[key] = contactBreakCounts.GetValueOrDefault(key) + 1;
+            var at = (contact is not null ? contact.Delay + contact.Duration * .9f :
+                terrainBreak.PieceId == movingId ? Math.Max(.04f, moveDuration * .9f) : _impactTime) + stagger;
+            _terrainBreaks.Add(new TerrainBreakVisual { Cell = terrainBreak.Cell, Solid = terrainBreak.Solid, At = at });
         }
         if (_terrainBreaks.Count > 0) _impactTime = Math.Max(_impactTime, _terrainBreaks.Max(change => change.At + .08f));
     }
