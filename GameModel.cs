@@ -137,7 +137,7 @@ public sealed class TerrariumModel
         RevealedClues = new HashSet<Int3>(); CavernProtected = new HashSet<Int3>(); DisturbedTerrain = new HashSet<Int3>();
         var random = seed is { } value ? new Random(value) : Random.Shared;
         for (var x = 0; x < 8; x++) for (var y = 0; y < 8; y++) for (var z = 0; z < 7; z++)
-            Mines[x, y, z] = random.NextDouble() < .12;
+            Mines[x, y, z] = random.NextDouble() < .15;
         for (var x = -1; x <= 8; x++) for (var y = -1; y <= 8; y++) for (var z = -1; z <= 16; z++)
             if (x is < 0 or > 7 || y is < 0 or > 7 || z is < 0 or > 15) RevealedClues.Add(new Int3(x, y, z));
         CarveZeroCaverns();
