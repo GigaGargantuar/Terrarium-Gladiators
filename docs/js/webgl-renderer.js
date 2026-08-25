@@ -143,7 +143,7 @@ export class WorldRenderer {
     const glyphs={0:"abcdef",1:"bc",2:"abdeg",3:"abcdg",4:"bcfg",5:"acdfg",6:"acdefg",7:"abc",8:"abcdefg",9:"abcdfg"};
     const segments={a:[0,.25,1],b:[.16,.13,0],c:[.16,-.13,0],d:[0,-.25,1],e:[-.16,-.13,0],f:[-.16,.13,0],g:[0,0,1]};
     for(const encoded of model.revealedClues??[]){const[x,y,z]=encoded.split(",").map(Number),clue=model.clueAt({x,y,z});if(clue==null||(!this.layerFocus&&clue===0)||(this.layerFocus&&z!==this.focusLayer)||this.solid(solids,x,y,z))continue;
-      const digits=String(clue),scale=digits.length>1?.68:1,col=clue>=4?color(255,102,122):clue>=2?color(255,209,102):clue===0?color(54,115,119):color(127,255,240),away=norm(vec(x-this.camera.x,y-this.camera.y,0)),right=vec(away.y,-away.x,0);
+      const digits=String(clue),scale=digits.length>1?.68:1,col=clue>=4?color(255,102,122):clue>=2?color(255,209,102):clue===0?color(54,115,119):color(127,255,240),away=norm(vec(this.forward.x,this.forward.y,0)),right=norm(vec(this.right.x,this.right.y,0));
       for(let index=0;index<digits.length;index++){const offset=(index-(digits.length-1)/2)*.38*scale;for(const id of glyphs[digits[index]]??[]){const[sx,sy,horizontal]=segments[id],center=add(vec(x,y,z+.055),add(mul(right,offset+sx*scale),mul(away,sy*scale))),size=horizontal?vec(.30*scale,.065*scale,.07):vec(.065*scale,.23*scale,.07);mesh.planeBox(center,right,away,size,col)}}
     }
   }

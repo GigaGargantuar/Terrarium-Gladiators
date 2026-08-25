@@ -33,6 +33,7 @@ public sealed class ChessPiece
 
 public sealed record PieceFallEvent(int PieceId, Side Side, PieceKind Kind, Int3 From, Int3 To,
     bool Perished, bool StartsWithMove = false);
+public sealed record TerrainBreakEvent(Int3 Cell, int? PieceId);
 
 public sealed class TerrariumModel
 {
@@ -58,6 +59,7 @@ public sealed class TerrariumModel
     public string Message { get; private set; } = string.Empty;
     public int? SelectedId { get; private set; }
     public List<PieceFallEvent> LastFalls { get; } = new();
+    public List<TerrainBreakEvent> LastTerrainBreaks { get; } = new();
     public int? PendingPromotionPieceId { get; private set; }
     private int? EnPassantPawnId { get; set; }
     private Int3? EnPassantTarget { get; set; }
@@ -114,6 +116,7 @@ public sealed class TerrariumModel
         PendingPromotionPieceId = null;
         Message = "White to move — select a piece, then a glowing cell.";
         LastFalls.Clear();
+        LastTerrainBreaks.Clear();
         _history.Clear();
     }
 
@@ -573,6 +576,7 @@ public sealed class TerrariumModel
     public bool TryMove(Int3 target)
     {
         LastFalls.Clear();
+        LastTerrainBreaks.Clear();
         var piece = Selected;
         if (piece is null || !LegalMoves(piece).Contains(target))
         {
@@ -596,7 +600,7 @@ public sealed class TerrariumModel
 
         if (excavating)
         {
-            RemoveTerrain(target, events);
+            RemoveTerrain(target, events, piece.Id);
             destination = MoveDestination(piece, target, true);
             events.Add($"{piece.Kind} excavated {CellName(target)}.");
             if (!Pieces.Contains(piece)) { Message = string.Join("  ", events); return FinishMove(piece); }
@@ -709,10 +713,10 @@ public sealed class TerrariumModel
 
     private static bool OnEnemyBackRank(ChessPiece piece) => piece.Side == Side.White ? piece.Position.Y == 7 : piece.Position.Y == 0;
 
-    private bool RemoveTerrain(Int3 p, List<string> events)
+    private bool RemoveTerrain(Int3 p, List<string> events, int? pieceId = null)
     {
         if (!IsSolid(p)) return false;
-        Solids[p.X, p.Y, p.Z] = false; DisturbedTerrain.Add(p); RevealedClues.Add(p);
+        Solids[p.X, p.Y, p.Z] = false; LastTerrainBreaks.Add(new TerrainBreakEvent(p, pieceId)); DisturbedTerrain.Add(p); RevealedClues.Add(p);
         if (IsMine(p)) DetonateMine(p, events);
         return true;
     }
@@ -783,7 +787,7 @@ public sealed class TerrariumModel
                         var impactBaseZ = Math.Max(0, supportZ);
                         if (supportZ >= 0 && Solids[x, y, supportZ])
                         {
-                            RemoveTerrain(new Int3(x, y, supportZ), events);
+                            RemoveTerrain(new Int3(x, y, supportZ), events, bottom.Id);
                             events.Add($"Impact shattered cube {CellName(new Int3(x, y, supportZ))}!");
                         }
                         else if (impactPiece is not null)
@@ -803,7 +807,7 @@ public sealed class TerrariumModel
                             stationaryTower.RemoveAt(0);
                             DestroyPiece(crushedBottom, $"The bottom {crushedBottom.Kind} was squashed beneath its tower!");
                             events.Add($"{crushedBottom.Side} {crushedBottom.Kind} at the tower base was squashed!");
-                            var craterZ = ExcavateCraterBelow(x, y, crushedBottom.Position.Z - 1, events);
+                            var craterZ = ExcavateCraterBelow(x, y, crushedBottom.Position.Z - 1, events, bottom.Id);
                             var settledBaseZ = craterZ >= 0 ? craterZ : crushedBottom.Position.Z;
                             if (craterZ >= 0)
                             {
@@ -916,12 +920,12 @@ public sealed class TerrariumModel
         return false;
     }
 
-    private int ExcavateCraterBelow(int x, int y, int startZ, List<string> events)
+    private int ExcavateCraterBelow(int x, int y, int startZ, List<string> events, int? pieceId = null)
     {
         for (var z = startZ; z >= 0; z--)
         {
             if (!Solids[x, y, z]) continue;
-            RemoveTerrain(new Int3(x, y, z), events);
+            RemoveTerrain(new Int3(x, y, z), events, pieceId);
             return z;
         }
         return -1;
@@ -994,6 +998,7 @@ public sealed class TerrariumModel
         EnPassantTarget = snapshot.EnPassantTarget;
         PendingPromotionPieceId = snapshot.PendingPromotionPieceId;
         LastFalls.Clear();
+        LastTerrainBreaks.Clear();
         return true;
     }
 

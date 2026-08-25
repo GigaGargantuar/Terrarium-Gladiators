@@ -22,6 +22,13 @@ public sealed class Game1 : Game
         public bool Finished => Elapsed >= Delay + Duration;
     }
 
+    private sealed class TerrainBreakVisual
+    {
+        public required Int3 Cell { get; init; }
+        public float At { get; init; }
+        public bool Applied { get; set; }
+    }
+
     private const int WindowWidth = 1440;
     private const int WindowHeight = 900;
     private const float BotMoveDelay = .45f;
@@ -29,6 +36,7 @@ public sealed class Game1 : Game
     private readonly TerrariumModel _model = new();
     private readonly TerrariumBot _bot = new();
     private readonly List<FallVisual> _falls = new();
+    private readonly List<TerrainBreakVisual> _terrainBreaks = new();
     private SpriteBatch _spriteBatch = null!;
     private SpriteFont _font = null!;
     private Texture2D _pixel = null!;
@@ -138,10 +146,16 @@ public sealed class Game1 : Game
         if (_preImpactTerrain is not null)
         {
             _transitionElapsed += elapsed;
+            foreach (var change in _terrainBreaks.Where(change => !change.Applied && _transitionElapsed >= change.At))
+            {
+                change.Applied = true;
+                _preImpactTerrain[change.Cell.X, change.Cell.Y, change.Cell.Z] = false;
+            }
             if (_transitionElapsed >= _impactTime)
             {
                 _preImpactTerrain = null;
                 _preImpactPieces = null;
+                _terrainBreaks.Clear();
             }
         }
 
@@ -311,6 +325,7 @@ public sealed class Game1 : Game
     private void ClearTransition()
     {
         _falls.Clear();
+        _terrainBreaks.Clear();
         _preImpactTerrain = null;
         _preImpactPieces = null;
     }
@@ -476,6 +491,7 @@ public sealed class Game1 : Game
     private void StartTransition(int movingId, Int3 moveFrom, bool[,,] terrainBefore, List<ChessPiece> piecesBefore)
     {
         _falls.Clear();
+        _terrainBreaks.Clear();
         _preImpactTerrain = terrainBefore;
         _preImpactPieces = piecesBefore;
         _transitionElapsed = 0;
@@ -508,6 +524,16 @@ public sealed class Game1 : Game
             delays[fall.PieceId] = delay + duration;
         }
         _impactTime = Math.Max(.08f, _falls.Count == 0 ? .08f : _falls.Max(fall => fall.Delay + fall.Duration));
+        foreach (var terrainBreak in _model.LastTerrainBreaks)
+        {
+            var candidates = _falls.Where(animation => animation.Fall.PieceId == terrainBreak.PieceId).ToList();
+            var contact = candidates.FirstOrDefault(animation => animation.Fall.To == terrainBreak.Cell) ??
+                candidates.FirstOrDefault(animation => animation.Fall.To.Z <= terrainBreak.Cell.Z + 1) ?? candidates.LastOrDefault();
+            var at = contact is not null ? contact.Delay + contact.Duration * .9f :
+                terrainBreak.PieceId == movingId ? Math.Max(.04f, moveDuration * .9f) : _impactTime;
+            _terrainBreaks.Add(new TerrainBreakVisual { Cell = terrainBreak.Cell, At = at });
+        }
+        if (_terrainBreaks.Count > 0) _impactTime = Math.Max(_impactTime, _terrainBreaks.Max(change => change.At + .08f));
     }
 
     private FallVisual? ActiveFall(int pieceId)

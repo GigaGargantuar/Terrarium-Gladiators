@@ -5,7 +5,7 @@ const model=new TerrariumModel(),canvas=document.querySelector("#board"),rendere
 const ui={turn:document.querySelector("#turn-label"),message:document.querySelector("#message"),selected:document.querySelector("#selected-piece"),planes:[...document.querySelectorAll("[data-plane]")],mode:document.querySelector("#mode-select"),role:document.querySelector("#role-note"),mine:document.querySelector("#minesweeper-toggle"),scout:document.querySelector("#scout-controls"),scoutPattern:document.querySelector("#scout-pattern"),scoutButton:document.querySelector("#scout-button"),layer:document.querySelector("#layer-toggle"),depth:document.querySelector("#depth-slider"),depthOut:document.querySelector("#depth-output"),camera:document.querySelector("#camera-readout"),help:document.querySelector("#help-dialog"),promotion:document.querySelector("#promotion-dialog"),thinking:document.querySelector("#thinking")};
 let botWorker=null,botTimer=null,positionVersion=0,dirty=true,lastTime=performance.now(),pointerStart=null,pointerLast=null,dragging=false;
 const MatchMode=Object.freeze({PVP:"pvp",PVBOT:"pvbot",BOTVBOT:"botvbot"});
-let matchMode=MatchMode.PVBOT,falls=[],preImpactSolids=null,preImpactPieces=null,impactTime=0,pendingBot=false;
+let matchMode=MatchMode.PVBOT,falls=[],terrainBreaks=[],preImpactSolids=null,preImpactPieces=null,impactTime=0,transitionElapsed=0,pendingBot=false;
 const clonePieces=pieces=>pieces.map(p=>({...p,position:{...p.position}}));
 const same=(a,b)=>a&&b&&a.x===b.x&&a.y===b.y&&a.z===b.z;
 const lerp=(a,b,t)=>a+(b-a)*t;
@@ -27,7 +27,7 @@ function startBotWorker(){
 startBotWorker();
 
 function startTransition(movingId,moveFrom,terrainBefore,piecesBefore){
-  falls=[];preImpactSolids=terrainBefore;preImpactPieces=piecesBefore;const delays=new Map();
+  falls=[];terrainBreaks=[];transitionElapsed=0;preImpactSolids=terrainBefore;preImpactPieces=piecesBefore;const delays=new Map();
   const firstFall=model.lastFalls.find(f=>f.pieceId===movingId),survivor=model.pieces.find(p=>p.id===movingId),moveTo=firstFall?.from??survivor?.position??moveFrom;let moveDuration=0;
   if(!same(moveFrom,moveTo)){
     const travel=Math.abs(moveTo.x-moveFrom.x)+Math.abs(moveTo.y-moveFrom.y)+Math.abs(moveTo.z-moveFrom.z);moveDuration=.20+travel*.045;
@@ -39,6 +39,8 @@ function startTransition(movingId,moveFrom,terrainBefore,piecesBefore){
     falls.push({fall:{...fall,from:{...fall.from},to:{...fall.to}},delay,duration,elapsed:0});delays.set(fall.pieceId,delay+duration);
   }
   impactTime=Math.max(.08,falls.length?Math.max(...falls.map(f=>f.delay+f.duration)):.08);dirty=true;
+  for(const terrainBreak of model.lastTerrainBreaks??[]){const candidates=falls.filter(animation=>animation.fall.pieceId===terrainBreak.pieceId),contact=candidates.find(animation=>same(animation.fall.to,terrainBreak.cell))??candidates.find(animation=>animation.fall.to.z<=terrainBreak.cell.z+1)??candidates.at(-1),at=contact?contact.delay+contact.duration*.9:terrainBreak.pieceId===movingId?Math.max(.04,moveDuration*.9):impactTime;terrainBreaks.push({cell:{...terrainBreak.cell},at,applied:false})}
+  if(terrainBreaks.length)impactTime=Math.max(impactTime,Math.max(...terrainBreaks.map(change=>change.at+.08)));
 }
 function transitionActive(){return preImpactSolids!==null}
 function progress(a){return Math.max(0,Math.min(1,(a.elapsed-a.delay)/a.duration))}
@@ -51,8 +53,8 @@ function renderPieces(){
   if(preImpactPieces){const finalIds=new Set(model.pieces.map(p=>p.id)),animatedIds=new Set(falls.map(a=>a.fall.pieceId));for(const piece of preImpactPieces)if(!finalIds.has(piece.id)&&!animatedIds.has(piece.id))result.push({piece,position:{...piece.position},opacity:1})}
   return result;
 }
-function finishTransition(){preImpactSolids=null;preImpactPieces=null;falls=[];dirty=true;syncUI();if(pendingBot&&isBotTurn()&&!model.winner&&model.pendingPromotionPieceId==null){pendingBot=false;queueBot()}}
-function updateTransition(dt){if(!transitionActive())return;for(const animation of falls)animation.elapsed+=dt;impactTime-=dt;if(impactTime<=0)finishTransition();dirty=true}
+function finishTransition(){preImpactSolids=null;preImpactPieces=null;falls=[];terrainBreaks=[];dirty=true;syncUI();if(pendingBot&&isBotTurn()&&!model.winner&&model.pendingPromotionPieceId==null){pendingBot=false;queueBot()}}
+function updateTransition(dt){if(!transitionActive())return;transitionElapsed+=dt;for(const animation of falls)animation.elapsed+=dt;for(const change of terrainBreaks)if(!change.applied&&transitionElapsed>=change.at){change.applied=true;preImpactSolids[model.solidIndex(change.cell.x,change.cell.y,change.cell.z)]=0}impactTime-=dt;if(impactTime<=0)finishTransition();dirty=true}
 
 function syncUI(){
   const botThinking=!ui.thinking.hidden;ui.turn.textContent=model.winner?`${sideName(model.winner)} WINS`:botThinking?`${sideName(model.turn)} BOT THINKING`:`${sideName(model.turn)} TO MOVE`;ui.turn.classList.toggle("black",model.turn===Side.BLACK&&!model.winner);
@@ -72,7 +74,7 @@ requestAnimationFrame(frame);new ResizeObserver(()=>{dirty=true}).observe(canvas
 
 function setPlane(plane){if(!isHumanTurn()||model.winner||model.pendingPromotionPieceId!=null||transitionActive())return;model.setPlane(plane);syncUI()}
 function cyclePiece(backward=false){if(!isHumanTurn()||transitionActive())return;const pieces=model.pieces.filter(p=>p.side===model.turn).sort((a,b)=>a.id-b.id);if(!pieces.length)return;let i=pieces.findIndex(p=>p.id===model.selectedId);i=(i+(backward?-1:1)+pieces.length)%pieces.length;model.select(pieces[i].id);syncUI()}
-function reset(){clearTimeout(botTimer);pendingBot=false;preImpactSolids=null;preImpactPieces=null;falls=[];matchMode=MatchMode.PVBOT;ui.mode.value=matchMode;model.reset();positionVersion++;startBotWorker();ui.thinking.hidden=true;if(ui.promotion.open)ui.promotion.close();syncUI();if(isBotTurn())queueBot()}
+function reset(){clearTimeout(botTimer);pendingBot=false;preImpactSolids=null;preImpactPieces=null;falls=[];terrainBreaks=[];matchMode=MatchMode.PVBOT;ui.mode.value=matchMode;model.reset();positionVersion++;startBotWorker();ui.thinking.hidden=true;if(ui.promotion.open)ui.promotion.close();syncUI();if(isBotTurn())queueBot()}
 function setMatchMode(mode){
   if(matchMode===mode)return;clearTimeout(botTimer);pendingBot=false;matchMode=mode;positionVersion++;startBotWorker();ui.thinking.hidden=true;
   if(model.pendingPromotionPieceId!=null&&isBotTurn()){model.promote(Kind.QUEEN);if(ui.promotion.open)ui.promotion.close();positionVersion++;}

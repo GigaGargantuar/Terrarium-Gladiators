@@ -338,6 +338,7 @@ test("a fall that punches through terrain resets damage at every destroyed cell"
   assert.deepEqual(game.lastFalls.filter(fall=>fall.pieceId===1).map(fall=>[fall.from.z,fall.to.z,fall.perished]),[
     [10,7,false],[7,3,false],[3,0,false],
   ]);
+  assert.deepEqual(game.lastTerrainBreaks.map(change=>[change.cell.z,change.pieceId]),[[7,1],[3,1]]);
 });
 
 test("fall damage continues normally after a reset and can kill on a later segment", () => {

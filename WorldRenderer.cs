@@ -188,7 +188,7 @@ public sealed class WorldRenderer : IDisposable
             var scale = digits.Length > 1 ? .68f : 1f;
             var color = clue >= 4 ? new Color(255, 102, 122) :
                 clue >= 2 ? new Color(255, 209, 102) : clue == 0 ? new Color(54, 115, 119) : new Color(127, 255, 240);
-            var away = new Vector3(cell.X - _cameraPosition.X, cell.Y - _cameraPosition.Y, 0);
+            var away = new Vector3(3.5f - _cameraPosition.X, 3.5f - _cameraPosition.Y, 0);
             away = away.LengthSquared() > .0001f ? Vector3.Normalize(away) : Vector3.UnitY;
             var right = new Vector3(away.Y, -away.X, 0);
             for (var index = 0; index < digits.Length; index++)
