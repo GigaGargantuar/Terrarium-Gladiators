@@ -46,7 +46,8 @@ public sealed class WorldRenderer : IDisposable
     }
 
     public void Draw(TerrariumModel model, bool[,,]? terrainOverride, bool[,,]? mineOverride,
-        IReadOnlySet<Int3>? clueOverride, IReadOnlyList<RenderPiece> pieces, IReadOnlyList<Int3> legalMoves)
+        IReadOnlySet<Int3>? clueOverride, IReadOnlyList<RenderPiece> pieces, IReadOnlyList<Int3> legalMoves,
+        bool showBotMarks)
     {
         UpdateCamera();
         _opaque.Clear();
@@ -54,7 +55,7 @@ public sealed class WorldRenderer : IDisposable
 
         BuildTerrain(terrainOverride ?? model.Solids);
         BuildLayerGuide();
-        BuildCellMarks(model, terrainOverride ?? model.Solids);
+        BuildCellMarks(model, terrainOverride ?? model.Solids, showBotMarks);
         BuildClues(model, terrainOverride ?? model.Solids, mineOverride ?? model.Mines, clueOverride ?? model.RevealedClues);
         BuildMoveHints(model, legalMoves);
         foreach (var rendered in pieces.OrderBy(p => Vector3.DistanceSquared(p.Position, _cameraPosition)).Reverse())
@@ -260,7 +261,7 @@ public sealed class WorldRenderer : IDisposable
         }
     }
 
-    private void BuildCellMarks(TerrariumModel model, bool[,,] solids)
+    private void BuildCellMarks(TerrariumModel model, bool[,,] solids, bool showBotMarks)
     {
         foreach (var cell in model.SafeMarks)
         {
@@ -279,6 +280,27 @@ public sealed class WorldRenderer : IDisposable
                 var center = geometry.Center + geometry.Normal * .035f;
                 AddPlaneBox(center, diagonalA, diagonalB, new Vector3(.58f, .075f, .055f), new Color(247, 73, 97));
                 AddPlaneBox(center, diagonalB, diagonalA, new Vector3(.58f, .075f, .055f), new Color(247, 73, 97));
+            }
+        }
+        if (!showBotMarks) return;
+        foreach (var cell in model.BotSafeMarks)
+        {
+            if (!Solid(solids, cell.X, cell.Y, cell.Z) || LayerFocus && !InFocusWindow(cell.Z)) continue;
+            foreach (var geometry in CellFaces(cell, solids))
+                AddPlaneFrame(geometry.Center + geometry.Normal * .022f, geometry.U, geometry.V,
+                    .43f, new Color(86, 169, 255, 235), .045f);
+        }
+        foreach (var cell in model.BotMineFlags)
+        {
+            if (!Solid(solids, cell.X, cell.Y, cell.Z) || LayerFocus && !InFocusWindow(cell.Z)) continue;
+            foreach (var geometry in CellFaces(cell, solids))
+            {
+                var diagonalA = Vector3.Normalize(geometry.U + geometry.V);
+                var diagonalB = Vector3.Normalize(geometry.U - geometry.V);
+                var center = geometry.Center + geometry.Normal * .041f;
+                var color = new Color(255, 166, 72);
+                AddPlaneBox(center, diagonalA, diagonalB, new Vector3(.43f, .06f, .05f), color);
+                AddPlaneBox(center, diagonalB, diagonalA, new Vector3(.43f, .06f, .05f), color);
             }
         }
     }

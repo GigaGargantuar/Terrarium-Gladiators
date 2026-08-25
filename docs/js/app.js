@@ -1,8 +1,8 @@
-import { TerrariumModel, Side, Kind, Plane } from "./engine.js";
+import { TerrariumModel, Side, Kind, Plane, prepareBotTurn } from "./engine.js";
 import { WorldRenderer } from "./webgl-renderer.js";
 
 const model=new TerrariumModel(),canvas=document.querySelector("#board"),renderer=new WorldRenderer(canvas);
-const ui={turn:document.querySelector("#turn-label"),message:document.querySelector("#message"),selected:document.querySelector("#selected-piece"),planes:[...document.querySelectorAll("[data-plane]")],mode:document.querySelector("#mode-select"),role:document.querySelector("#role-note"),mine:document.querySelector("#minesweeper-toggle"),scout:document.querySelector("#scout-controls"),scoutPattern:document.querySelector("#scout-pattern"),scoutButton:document.querySelector("#scout-button"),layer:document.querySelector("#layer-toggle"),depth:document.querySelector("#depth-slider"),depthOut:document.querySelector("#depth-output"),camera:document.querySelector("#camera-readout"),help:document.querySelector("#help-dialog"),promotion:document.querySelector("#promotion-dialog"),thinking:document.querySelector("#thinking"),deselect:document.querySelector(".deselect-note")};
+const ui={turn:document.querySelector("#turn-label"),message:document.querySelector("#message"),selected:document.querySelector("#selected-piece"),planes:[...document.querySelectorAll("[data-plane]")],mode:document.querySelector("#mode-select"),role:document.querySelector("#role-note"),mine:document.querySelector("#minesweeper-toggle"),botMarksRow:document.querySelector("#bot-marks-toggle-row"),botMarks:document.querySelector("#bot-marks-toggle"),scout:document.querySelector("#scout-controls"),scoutPattern:document.querySelector("#scout-pattern"),scoutButton:document.querySelector("#scout-button"),layer:document.querySelector("#layer-toggle"),depth:document.querySelector("#depth-slider"),depthOut:document.querySelector("#depth-output"),camera:document.querySelector("#camera-readout"),help:document.querySelector("#help-dialog"),promotion:document.querySelector("#promotion-dialog"),thinking:document.querySelector("#thinking"),deselect:document.querySelector(".deselect-note")};
 let botWorker=null,botTimer=null,positionVersion=0,dirty=true,lastTime=performance.now(),pointerStart=null,pointerLast=null,dragging=false;
 const MatchMode=Object.freeze({PVP:"pvp",PVBOT:"pvbot",BOTVBOT:"botvbot"});
 let matchMode=MatchMode.PVBOT,falls=[],terrainBreaks=[],pieceRemovals=[],preImpactSolids=null,preImpactMines=null,preImpactClues=null,preImpactPieces=null,impactTime=0,transitionElapsed=0,pendingBot=false;
@@ -66,13 +66,14 @@ function syncUI(){
   ui.thinking.innerHTML=`<i></i> ${sideName(model.turn)} BOT THINKING`;
   ui.role.textContent=matchMode===MatchMode.PVP?"Same-device PvP · pass control each turn":matchMode===MatchMode.BOTVBOT?"Bot vs Bot · spectator mode":"You are White · Black is the bot";
   ui.deselect.textContent=model.minesweeperEnabled?"Empty cell: LMB safe · RMB flag":"Right-click to deselect";
+  ui.botMarksRow.hidden=!model.minesweeperEnabled;
   for(const button of ui.planes)button.setAttribute("aria-checked",String(button.dataset.plane===model.plane));
   const patterns=model.minesweeperEnabled&&piece?model.scoutPatterns(piece):[],previous=ui.scoutPattern.value;ui.scout.hidden=!patterns.length;ui.scoutPattern.replaceChildren(...patterns.map(pattern=>{const option=document.createElement("option");option.value=pattern;option.textContent=pattern.replaceAll("-"," ").toUpperCase();return option}));if(patterns.includes(previous))ui.scoutPattern.value=previous;
   ui.camera.textContent=`TRUE 3D / ${Math.round(renderer.elevation).toString().padStart(2,"0")}° / ZOOM ${Math.round(renderer.zoom*100).toString().padStart(3,"0")}%`;
   if(model.pendingPromotionPieceId!=null&&isHumanTurn()&&!transitionActive()&&!ui.promotion.open)ui.promotion.showModal();dirty=true;
 }
 function draw(){
-  renderer.render(model,preImpactSolids??model.solids,renderPieces(),transitionActive()?[]:model.selected?model.legalMoves():[],preImpactMines??model.mines,preImpactClues??model.revealedClues);dirty=false;
+  renderer.render(model,preImpactSolids??model.solids,renderPieces(),transitionActive()?[]:model.selected?model.legalMoves():[],preImpactMines??model.mines,preImpactClues??model.revealedClues,ui.botMarks.checked);dirty=false;
 }
 function frame(now){const dt=Math.min(.05,(now-lastTime)/1000);lastTime=now;updateTransition(dt);if(dirty)draw();requestAnimationFrame(frame)}
 requestAnimationFrame(frame);new ResizeObserver(()=>{dirty=true}).observe(canvas);
@@ -88,7 +89,7 @@ function setMatchMode(mode){
 function undo(){if(transitionActive())return;clearTimeout(botTimer);pendingBot=false;ui.thinking.hidden=true;if(!model.undo())return;if(matchMode===MatchMode.PVBOT&&model.turn===Side.BLACK&&!model.winner)model.undo();positionVersion++;startBotWorker();syncUI();if(isBotTurn())queueBot()}
 function queueBot(){
   if(!isBotTurn()||model.winner||model.pendingPromotionPieceId!=null||transitionActive())return;const version=++positionVersion;ui.thinking.hidden=false;syncUI();
-  botTimer=setTimeout(()=>{if(version!==positionVersion||!isBotTurn())return;const state=model.cloneForSimulation();botWorker.postMessage({version,state:{solids:[...state.solids],mines:[...state.mines],revealedClues:[...state.revealedClues],cavernProtected:[...state.cavernProtected],disturbedTerrain:[...state.disturbedTerrain],minesweeperEnabled:state.minesweeperEnabled,pieces:state.pieces,turn:state.turn,plane:state.plane,winner:state.winner,message:state.message,selectedId:state.selectedId,enPassantPawnId:state.enPassantPawnId,enPassantTarget:state.enPassantTarget,pendingPromotionPieceId:state.pendingPromotionPieceId,nextId:state.nextId}})},460);
+  botTimer=setTimeout(()=>{if(version!==positionVersion||!isBotTurn())return;prepareBotTurn(model);syncUI();const state=model.cloneForBotSearch();botWorker.postMessage({version,state:{solids:[...state.solids],revealedClues:[...state.revealedClues],botSafeMarks:[...state.botSafeMarks],botMineFlags:[...state.botMineFlags],cavernProtected:[...state.cavernProtected],disturbedTerrain:[...state.disturbedTerrain],minesweeperEnabled:state.minesweeperEnabled,pieces:state.pieces,turn:state.turn,plane:state.plane,winner:state.winner,message:state.message,selectedId:state.selectedId,enPassantPawnId:state.enPassantPawnId,enPassantTarget:state.enPassantTarget,pendingPromotionPieceId:state.pendingPromotionPieceId,nextId:state.nextId}})},460);
 }
 function executeMove(target){
   const moving=model.selected;if(!moving)return;const beforeSolids=model.solids.slice(),beforeMines=model.mines.slice(),beforeClues=new Set(model.revealedClues),beforePieces=clonePieces(model.pieces),from={...moving.position};
@@ -115,6 +116,7 @@ for(const button of ui.planes)button.addEventListener("click",()=>setPlane(butto
 document.querySelector("#undo-button").addEventListener("click",undo);document.querySelector("#restart-button").addEventListener("click",reset);document.querySelector("#help-button").addEventListener("click",()=>ui.help.showModal());
 ui.mode.addEventListener("change",()=>setMatchMode(ui.mode.value));
 ui.mine.addEventListener("change",()=>{model.minesweeperEnabled=ui.mine.checked;reset()});
+ui.botMarks.addEventListener("change",()=>{dirty=true});
 ui.scoutButton.addEventListener("click",()=>{if(!isHumanTurn()||transitionActive()||!model.scout(ui.scoutPattern.value))return;positionVersion++;syncUI()});
 for(const button of document.querySelectorAll("[data-kind]"))button.addEventListener("click",()=>{if(model.promote(button.dataset.kind)){ui.promotion.close();positionVersion++;pendingBot=false;syncUI();if(isBotTurn())queueBot()}});
 window.addEventListener("keydown",e=>{

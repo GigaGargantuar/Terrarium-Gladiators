@@ -54,6 +54,8 @@ public sealed class TerrariumModel
     public HashSet<Int3> RevealedClues { get; private set; } = new();
     public HashSet<Int3> SafeMarks { get; private set; } = new();
     public HashSet<Int3> MineFlags { get; private set; } = new();
+    public HashSet<Int3> BotSafeMarks { get; private set; } = new();
+    public HashSet<Int3> BotMineFlags { get; private set; } = new();
     public bool MinesweeperEnabled { get; private set; }
     private HashSet<Int3> CavernProtected { get; set; } = new();
     private HashSet<Int3> DisturbedTerrain { get; set; } = new();
@@ -85,6 +87,8 @@ public sealed class TerrariumModel
         RevealedClues = new HashSet<Int3>(RevealedClues),
         SafeMarks = new HashSet<Int3>(SafeMarks),
         MineFlags = new HashSet<Int3>(MineFlags),
+        BotSafeMarks = new HashSet<Int3>(BotSafeMarks),
+        BotMineFlags = new HashSet<Int3>(BotMineFlags),
         CavernProtected = new HashSet<Int3>(CavernProtected),
         DisturbedTerrain = new HashSet<Int3>(DisturbedTerrain),
         MinesweeperEnabled = MinesweeperEnabled,
@@ -100,6 +104,15 @@ public sealed class TerrariumModel
         _nextId = _nextId
     };
 
+    internal TerrariumModel CloneForBotSearch()
+    {
+        var copy = CloneForSimulation();
+        copy.Mines = new bool[8, 8, 16];
+        foreach (var cell in BotMineFlags.Where(cell => IsInside(cell) && Solids[cell.X, cell.Y, cell.Z]))
+            copy.Mines[cell.X, cell.Y, cell.Z] = true;
+        return copy;
+    }
+
     public void Reset(int? mineSeed = null)
     {
         Solids = new bool[8, 8, 16];
@@ -112,6 +125,8 @@ public sealed class TerrariumModel
         else { Mines = new bool[8, 8, 16]; RevealedClues = new HashSet<Int3>(); CavernProtected = new HashSet<Int3>(); DisturbedTerrain = new HashSet<Int3>(); }
         SafeMarks = new HashSet<Int3>();
         MineFlags = new HashSet<Int3>();
+        BotSafeMarks = new HashSet<Int3>();
+        BotMineFlags = new HashSet<Int3>();
 
         Pieces = new List<ChessPiece>();
         _nextId = 1;
@@ -336,7 +351,11 @@ public sealed class TerrariumModel
         return result;
     }
 
-    public bool Scout(string pattern)
+    public bool Scout(string pattern) => Scout(pattern, false);
+
+    internal bool ScoutForBot(string pattern) => Scout(pattern, true);
+
+    private bool Scout(string pattern, bool recordBotKnowledge)
     {
         var piece = Selected; if (!MinesweeperEnabled || piece is null || !ScoutPatterns(piece).Contains(pattern) || Winner is not null) return false;
         var (a, b) = PlaneAxes(Plane); IEnumerable<Int3> directions = pattern switch
@@ -354,7 +373,24 @@ public sealed class TerrariumModel
         {
             var p = piece.Position + direction * distance;
             if (p.X is < -1 or > 8 || p.Y is < -1 or > 8 || p.Z is < -1 or > 16) break;
-            if (!IsMine(p)) { RevealedClues.Add(p); if (ClueAt(p) is { } clue) clues.Add(clue); }
+            if (IsMine(p))
+            {
+                if (recordBotKnowledge && IsInside(p))
+                {
+                    BotSafeMarks.Remove(p);
+                    BotMineFlags.Add(p);
+                }
+            }
+            else
+            {
+                RevealedClues.Add(p);
+                if (recordBotKnowledge && IsInside(p) && IsSolid(p))
+                {
+                    BotMineFlags.Remove(p);
+                    BotSafeMarks.Add(p);
+                }
+                if (ClueAt(p) is { } clue) clues.Add(clue);
+            }
             if (leaper) break;
         }
         Message = $"{piece.Side} {piece.Kind} scouted {pattern}: {clues.Count} clues, {clues.Count(n => n > 0)} warned of mines (max {(clues.Count == 0 ? 0 : clues.Max())}). Scouting is free.";

@@ -23,6 +23,8 @@ export class TerrariumModel {
     this.revealedClues = new Set();
     this.safeMarks = new Set();
     this.mineFlags = new Set();
+    this.botSafeMarks = new Set();
+    this.botMineFlags = new Set();
     this.cavernProtected = new Set();
     this.disturbedTerrain = new Set();
     this.pieces = [];
@@ -43,7 +45,7 @@ export class TerrariumModel {
     this.solids = new Uint8Array(8 * 8 * 16);
     for (let x = 0; x < 8; x++) for (let y = 0; y < 8; y++) for (let z = 0; z < 8; z++) this.setSolid(x, y, z, true);
     if(this.minesweeperEnabled)this.generateMinefield(mineSeed??TerrariumModel.randomMineSeed());else{this.mines=new Uint8Array(8*8*16);this.revealedClues=new Set();this.cavernProtected=new Set();this.disturbedTerrain=new Set()}
-    this.safeMarks=new Set();this.mineFlags=new Set();
+    this.safeMarks=new Set();this.mineFlags=new Set();this.botSafeMarks=new Set();this.botMineFlags=new Set();
     this.pieces = [];
     this.nextId = 1;
     this.addArmy(Side.WHITE, 0, 1);
@@ -110,6 +112,7 @@ export class TerrariumModel {
     copy.mines = this.mines?.slice()??new Uint8Array(8*8*16);
     copy.revealedClues = new Set(this.revealedClues??[]);
     copy.safeMarks = new Set(this.safeMarks??[]);copy.mineFlags = new Set(this.mineFlags??[]);
+    copy.botSafeMarks = new Set(this.botSafeMarks??[]);copy.botMineFlags = new Set(this.botMineFlags??[]);
     copy.cavernProtected = new Set(this.cavernProtected??[]);copy.disturbedTerrain=new Set(this.disturbedTerrain??[]);
     copy.pieces = this.pieces.map(clonePiece);
     copy.turn = this.turn; copy.plane = this.plane; copy.winner = this.winner;
@@ -119,6 +122,12 @@ export class TerrariumModel {
     copy.pendingPromotionPieceId = this.pendingPromotionPieceId;
     copy.minesweeperEnabled = this.minesweeperEnabled;
     copy.nextId = this.nextId; copy.history = []; copy.lastFalls = [];copy.lastTerrainChanges=[];copy.lastPieceRemovals=[];
+    return copy;
+  }
+
+  cloneForBotSearch() {
+    const copy=this.cloneForSimulation();copy.mines=new Uint8Array(8*8*16);
+    for(const encoded of this.botMineFlags??[]){const[x,y,z]=encoded.split(",").map(Number);if(TerrariumModel.isInside(v(x,y,z))&&this.solidAt(x,y,z))copy.mines[copy.solidIndex(x,y,z)]=1}
     return copy;
   }
 
@@ -178,8 +187,8 @@ export class TerrariumModel {
     if(pattern==="knight-012")return[add(mul(a,2),b),add(mul(a,2),mul(b,-1)),add(mul(a,-2),b),add(mul(a,-2),mul(b,-1)),add(mul(b,2),a),add(mul(b,2),mul(a,-1)),add(mul(b,-2),a),add(mul(b,-2),mul(a,-1))];
     const forward=v(0,piece.side===Side.WHITE?1:-1,0);if(pattern==="capture")return this.plane===Plane.YZ?[add(forward,v(0,0,1)),add(forward,v(0,0,-1))]:[add(forward,v(1,0,0)),add(forward,v(-1,0,0))];return[this.plane===Plane.XY?forward:v(0,0,1)];
   }
-  scout(pattern){const piece=this.selected;if(!this.minesweeperEnabled||!piece||!this.scoutPatterns(piece).includes(pattern)||this.winner)return false;const dirs=this.scanDirections(piece,pattern),leapers=pattern.startsWith("knight")||piece.kind===Kind.PAWN,cells=[];
-    for(const d of dirs){for(let n=1;n<=18;n++){const p=add(piece.position,mul(d,n));if(p.x< -1||p.x>8||p.y< -1||p.y>8||p.z< -1||p.z>16)break;if(!this.mineAt(p.x,p.y,p.z)){this.revealedClues.add(key(p));cells.push(p)}if(leapers)break}}
+  scout(pattern,recordBotKnowledge=false){const piece=this.selected;if(!this.minesweeperEnabled||!piece||!this.scoutPatterns(piece).includes(pattern)||this.winner)return false;const dirs=this.scanDirections(piece,pattern),leapers=pattern.startsWith("knight")||piece.kind===Kind.PAWN,cells=[];
+    for(const d of dirs){for(let n=1;n<=18;n++){const p=add(piece.position,mul(d,n));if(p.x< -1||p.x>8||p.y< -1||p.y>8||p.z< -1||p.z>16)break;const encoded=key(p);if(this.mineAt(p.x,p.y,p.z)){if(recordBotKnowledge&&TerrariumModel.isInside(p)){this.botSafeMarks.delete(encoded);this.botMineFlags.add(encoded)}}else{this.revealedClues.add(encoded);cells.push(p);if(recordBotKnowledge&&TerrariumModel.isInside(p)&&this.isSolid(p)){this.botMineFlags.delete(encoded);this.botSafeMarks.add(encoded)}}if(leapers)break}}
     const clues=cells.map(p=>this.clueAt(p)).filter(n=>n!=null),danger=clues.filter(n=>n>0).length,max=clues.length?Math.max(...clues):0;this.message=`${piece.side} ${piece.kind} scouted ${pattern}: ${clues.length} clues, ${danger} warned of mines (max ${max}). Scouting is free.`;return true;
   }
 
@@ -350,6 +359,42 @@ export class TerrariumModel {
   static cellName(p){return `${String.fromCharCode(65+p.x)}${p.y+1}·${p.z}`;}
 }
 
+const parseKey=encoded=>{const[x,y,z]=encoded.split(",").map(Number);return v(x,y,z)};
+const isSubset=(left,right)=>[...left].every(cell=>right.has(cell));
+
+function visibleConstraints(position,knownSafe,knownMines){
+  const constraints=[];
+  for(const encoded of position.revealedClues??[]){const clueCell=parseKey(encoded),clue=position.clueAt(clueCell);if(clue==null)continue;const cells=new Set();let adjacentKnownMines=0;
+    for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)for(let dz=-1;dz<=1;dz++){if(!(dx||dy||dz))continue;const cell=add(clueCell,v(dx,dy,dz)),cellKey=key(cell);if(!TerrariumModel.isInside(cell)||cell.z>=7||!position.isSolid(cell))continue;if(knownMines.has(cellKey))adjacentKnownMines++;else if(!knownSafe.has(cellKey))cells.add(cellKey)}
+    const remaining=clue-adjacentKnownMines;if(cells.size&&remaining>=0&&remaining<=cells.size)constraints.push({cells,remaining});
+  }
+  return constraints;
+}
+
+function deduceMineKnowledge(position){
+  position.botMineFlags=new Set([...(position.botMineFlags??[])].filter(encoded=>{const cell=parseKey(encoded);return TerrariumModel.isInside(cell)&&cell.z<7&&position.isSolid(cell)}));
+  position.botSafeMarks=new Set([...(position.botSafeMarks??[])].filter(encoded=>{const cell=parseKey(encoded);return TerrariumModel.isInside(cell)&&position.isSolid(cell)}));
+  const knownMines=new Set(position.botMineFlags),knownSafe=new Set(position.botSafeMarks);
+  for(const encoded of position.revealedClues??[]){const cell=parseKey(encoded);if(TerrariumModel.isInside(cell))knownSafe.add(encoded)}
+  let changed=true;
+  while(changed){changed=false;const constraints=visibleConstraints(position,knownSafe,knownMines);
+    for(const constraint of constraints){if(constraint.remaining===0){for(const cell of constraint.cells)if(!knownSafe.has(cell)){knownSafe.add(cell);changed=true}}else if(constraint.remaining===constraint.cells.size){for(const cell of constraint.cells)if(!knownMines.has(cell)){knownMines.add(cell);changed=true}}}
+    if(changed)continue;
+    outer:for(let i=0;i<constraints.length;i++)for(let j=0;j<constraints.length;j++){const a=constraints[i],b=constraints[j];if(i===j||a.cells.size>=b.cells.size||!isSubset(a.cells,b.cells))continue;const difference=new Set([...b.cells].filter(cell=>!a.cells.has(cell))),remaining=b.remaining-a.remaining;if(remaining===0){for(const cell of difference)if(!knownSafe.has(cell)){knownSafe.add(cell);changed=true}}else if(remaining===difference.size){for(const cell of difference)if(!knownMines.has(cell)){knownMines.add(cell);changed=true}}if(changed)break outer}
+  }
+  for(const cell of knownMines){knownSafe.delete(cell);position.botMineFlags.add(cell)}
+  for(const encoded of knownSafe){const cell=parseKey(encoded);if(position.isSolid(cell))position.botSafeMarks.add(encoded)}
+  for(const cell of position.botMineFlags)position.botSafeMarks.delete(cell);
+}
+
+export function prepareBotTurn(position){
+  if(!position.minesweeperEnabled||position.winner)return;
+  const originalPlane=position.plane,originalSelection=position.selectedId,side=position.turn;let scans=0;
+  for(const plane of planes){position.setPlane(plane);for(const piece of position.pieces.filter(piece=>piece.side===side)){if(!position.select(piece.id))continue;for(const pattern of [...position.scoutPatterns(piece)])if(position.scout(pattern,true))scans++}}
+  deduceMineKnowledge(position);position.setPlane(originalPlane);if(originalSelection==null||!position.select(originalSelection))position.clearSelection();
+  position.message=`${side} bot used ${scans} free scans and now marks ${position.botSafeMarks.size} clear / ${position.botMineFlags.size} mined cells.`;
+}
+
 const pieceValues = {[Kind.PAWN]:100,[Kind.KNIGHT]:320,[Kind.BISHOP]:330,[Kind.TRISHOP]:360,[Kind.ROOK]:500,[Kind.QUEEN]:900,[Kind.KING]:20000};
 function material(position,side){return position.pieces.filter(p=>p.side===side).reduce((sum,p)=>sum+pieceValues[p.kind],0);}
 function preservationPenalty(root,position,botSide){const opponent=other(botSide),ownLoss=material(root,botSide)-material(position,botSide),opponentLoss=material(root,opponent)-material(position,opponent);return Math.max(0,ownLoss-opponentLoss)*3;}
@@ -358,7 +403,7 @@ function generateMoves(position,side){const moves=[];for(const plane of planes){
 function applyMove(position,move){const result=position.cloneForSimulation();result.plane=move.plane;if(!result.select(move.pieceId)||!result.tryMove(move.target))return null;if(result.pendingPromotionPieceId!=null)result.promote(Kind.QUEEN);return result;}
 
 export function chooseBotMove(position, replyLimit = 72){
-  if(position.winner)return null;const root=position.cloneForSimulation(),botSide=root.turn,opponent=other(botSide),moves=generateMoves(root,botSide),analyses=[];
+  if(position.winner)return null;const root=position.cloneForBotSearch(),botSide=root.turn,opponent=other(botSide),moves=generateMoves(root,botSide),analyses=[];
   for(const move of moves){const after=applyMove(root,move);if(!after)continue;if(after.winner===botSide)return move;let worst=Infinity,hasEvaluation=false,allowsMate=false;const replies=generateMoves(after,opponent),sampleStep=replies.length>replyLimit?Math.ceil(replies.length/replyLimit):1;
     // Every reply is simulated for king safety. Direct captures are also always
     // scored, so reply sampling can never hide an exposed piece or bad trade.

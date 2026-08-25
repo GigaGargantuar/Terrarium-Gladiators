@@ -54,6 +54,11 @@ activity, takes mate in one, and avoids allowing an opponent mate in one
 whenever a safe move exists. It always analyzes direct capture replies and
 strongly penalizes lines that lose more of its own material than they take, so
 it rescues threatened pieces and declines unfavorable trades.
+With Minesweeper enabled, the bot receives no hidden mine array. Before moving
+it freely scans with every available piece pattern, marks directly observed
+clear/mined cells, and applies exact-count plus subset deduction to visible
+clues. Its move search simulates only confirmed mines; unknown mines remain
+unknown until scouting, deduction, or an explosion reveals them.
 The desktop window is freely resizable; the game preserves its aspect ratio and
 keeps mouse picking aligned at every size.
 The game starts in borderless fullscreen at the desktop's current resolution.
@@ -66,6 +71,7 @@ piece will break it; otherwise it is red.
 - `1`, `2`, `3`: switch between XY, XZ, and YZ movement planes
 - `Space`: cycle the movement plane
 - `M`: toggle the optional Minesweeper addon (restarts the match)
+- `B`: show or hide the bot's blue clear markers and orange mine flags
 - `X`: cycle the selected piece's scouting pattern; `S`: scan for free
 - With Minesweeper enabled, LMB an unoccupied terrain cell to toggle a safe
   marker and RMB it to toggle a suspected-mine flag; annotations are turn-free
@@ -118,6 +124,9 @@ piece will break it; otherwise it is red.
   Pregame zero-clue flood fills carve stable cavern systems beneath the surface.
 - A selected piece can freely scout with one chosen component of its movement
   pattern. Scouting reveals number clues without consuming the turn.
+- On bot turns, every available scouting pattern is used before search. The
+  bot's blue clear markers and orange mine flags can be hidden without changing
+  its accumulated knowledge.
 - Standing above a mine is safe. Excavating or impact-cratering its terrain cell
   detonates it, destroying pieces in a 3×3×3 volume while leaving neighboring
   terrain intact.

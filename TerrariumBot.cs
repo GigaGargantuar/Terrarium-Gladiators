@@ -27,13 +27,46 @@ public sealed class TerrariumBot
             [PieceKind.King] = 20_000
         };
 
+    public void ScoutAndMark(TerrariumModel position)
+    {
+        if (!position.MinesweeperEnabled || position.Winner is not null) return;
+
+        var originalPlane = position.Plane;
+        var originalSelection = position.SelectedId;
+        var side = position.Turn;
+        var scans = 0;
+
+        // Scouting is a free action. Use every pattern each living piece can
+        // perform on every movement plane, just as a human player may.
+        foreach (var plane in Enum.GetValues<MovementPlane>())
+        {
+            position.SetPlane(plane);
+            foreach (var piece in position.Pieces.Where(piece => piece.Side == side).ToList())
+            {
+                if (!position.Select(piece.Id)) continue;
+                foreach (var pattern in position.ScoutPatterns(piece).ToList())
+                    if (position.ScoutForBot(pattern)) scans++;
+            }
+        }
+
+        DeduceMineKnowledge(position);
+        position.SetPlane(originalPlane);
+        if (originalSelection is { } selected && position.Select(selected)) { }
+        else position.ClearSelection();
+        position.SetMessage(
+            $"{side} bot used {scans} free scans and now marks " +
+            $"{position.BotSafeMarks.Count} clear / {position.BotMineFlags.Count} mined cells.");
+    }
+
     public BotMove? ChooseMove(TerrariumModel position)
     {
         if (position.Winner is not null) return null;
 
         // Search only on clones so move generation cannot alter the displayed
         // movement plane, selection, message, or undo history.
-        var root = position.CloneForSimulation();
+        // The search receives only mines established by scouting or visible
+        // clue deduction. The hidden mine array is deliberately discarded.
+        var root = position.CloneForBotSearch();
         var botSide = root.Turn;
         var opponent = Other(botSide);
         var moves = GenerateMoves(root, botSide);
@@ -76,6 +109,80 @@ public sealed class TerrariumBot
             .ThenBy(analysis => analysis.Move.Target.Y)
             .ThenBy(analysis => analysis.Move.Target.Z)
             .First().Move;
+    }
+
+    private static void DeduceMineKnowledge(TerrariumModel position)
+    {
+        position.BotMineFlags.RemoveWhere(cell =>
+            !TerrariumModel.IsInside(cell) || !position.IsSolid(cell) || cell.Z >= 7);
+        position.BotSafeMarks.RemoveWhere(cell =>
+            !TerrariumModel.IsInside(cell) || !position.IsSolid(cell));
+
+        var knownMines = new HashSet<Int3>(position.BotMineFlags);
+        var knownSafe = new HashSet<Int3>(position.BotSafeMarks);
+        knownSafe.UnionWith(position.RevealedClues.Where(TerrariumModel.IsInside));
+
+        var changed = true;
+        while (changed)
+        {
+            changed = false;
+            var constraints = VisibleConstraints(position, knownSafe, knownMines);
+            foreach (var constraint in constraints)
+            {
+                if (constraint.Remaining == 0)
+                    foreach (var cell in constraint.Cells)
+                        changed |= knownSafe.Add(cell);
+                else if (constraint.Remaining == constraint.Cells.Count)
+                    foreach (var cell in constraint.Cells)
+                        changed |= knownMines.Add(cell);
+            }
+
+            if (changed) continue;
+            for (var i = 0; i < constraints.Count && !changed; i++)
+            for (var j = 0; j < constraints.Count && !changed; j++)
+            {
+                if (i == j || constraints[i].Cells.Count >= constraints[j].Cells.Count ||
+                    !constraints[i].Cells.IsSubsetOf(constraints[j].Cells)) continue;
+                var difference = new HashSet<Int3>(constraints[j].Cells);
+                difference.ExceptWith(constraints[i].Cells);
+                var remaining = constraints[j].Remaining - constraints[i].Remaining;
+                if (remaining == 0)
+                    foreach (var cell in difference) changed |= knownSafe.Add(cell);
+                else if (remaining == difference.Count)
+                    foreach (var cell in difference) changed |= knownMines.Add(cell);
+            }
+        }
+
+        knownSafe.ExceptWith(knownMines);
+        position.BotMineFlags.UnionWith(knownMines);
+        position.BotSafeMarks.UnionWith(knownSafe.Where(position.IsSolid));
+        position.BotSafeMarks.ExceptWith(position.BotMineFlags);
+    }
+
+    private static List<ClueConstraint> VisibleConstraints(
+        TerrariumModel position, HashSet<Int3> knownSafe, HashSet<Int3> knownMines)
+    {
+        var constraints = new List<ClueConstraint>();
+        foreach (var clueCell in position.RevealedClues)
+        {
+            if (position.ClueAt(clueCell) is not { } clue) continue;
+            var cells = new HashSet<Int3>();
+            var adjacentKnownMines = 0;
+            for (var dx = -1; dx <= 1; dx++)
+            for (var dy = -1; dy <= 1; dy++)
+            for (var dz = -1; dz <= 1; dz++)
+            {
+                if (dx == 0 && dy == 0 && dz == 0) continue;
+                var cell = clueCell + new Int3(dx, dy, dz);
+                if (!TerrariumModel.IsInside(cell) || cell.Z >= 7 || !position.IsSolid(cell)) continue;
+                if (knownMines.Contains(cell)) adjacentKnownMines++;
+                else if (!knownSafe.Contains(cell)) cells.Add(cell);
+            }
+            var remaining = clue - adjacentKnownMines;
+            if (cells.Count > 0 && remaining >= 0 && remaining <= cells.Count)
+                constraints.Add(new ClueConstraint(cells, remaining));
+        }
+        return constraints;
     }
 
     private static ReplyAnalysis EvaluateOpponentReplies(
@@ -178,4 +285,5 @@ public sealed class TerrariumBot
 
     private readonly record struct MoveAnalysis(BotMove Move, int Score, bool AllowsMateInOne);
     private readonly record struct ReplyAnalysis(int Score, bool CanMateInOne);
+    private readonly record struct ClueConstraint(HashSet<Int3> Cells, int Remaining);
 }

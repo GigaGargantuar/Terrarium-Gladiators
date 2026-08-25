@@ -8,7 +8,7 @@
   <title>Terrarium Gladiators</title>
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="styles.css?v=bot-knowledge">
 </head>
 <body>
   <a class="skip-link" href="#board">Skip to the arena</a>
@@ -34,6 +34,7 @@
           <option value="botvbot">BOT VS BOT</option>
         </select>
         <label class="addon-toggle"><input id="minesweeper-toggle" type="checkbox"> MINESWEEPER ADDON</label>
+        <label id="bot-marks-toggle-row" class="addon-toggle" hidden><input id="bot-marks-toggle" type="checkbox" checked> SHOW BOT MARKERS</label>
       </section>
 
       <section class="turn-block">
@@ -97,7 +98,7 @@
         <section><b>03</b><h3>Isolate depth</h3><p>Middle-click, then scroll through adjacent two-layer windows.</p></section>
         <section><b>04</b><h3>Climb or excavate</h3><p>Pawns hop vertically anywhere; YZ climbs and upward digging still use walls.</p></section>
         <section><b>05</b><h3>Use gravity</h3><p>Falling pieces accelerate, bounce, crush, or fade on fatal impact.</p></section>
-        <section><b>06</b><h3>Optional minefield</h3><p>Scout for clues, then LMB an empty terrain cell to mark it safe or RMB to flag a suspected mine. These notes never alter terrain.</p></section>
+        <section><b>06</b><h3>Optional minefield</h3><p>Scout for clues, then mark cells yourself or show the bot's blue clear and orange mine markers. The bot uses scouting and visible-clue deduction only.</p></section>
       </div>
       <button class="primary-button" value="close">RETURN TO THE ARENA</button>
     </form>

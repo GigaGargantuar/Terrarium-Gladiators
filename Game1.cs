@@ -53,6 +53,7 @@ public sealed class Game1 : Game
     private MouseState _oldMouse;
     private KeyboardState _oldKeyboard;
     private bool _showHelp;
+    private bool _showBotMarks = true;
     private bool _depthFocus;
     private int _selectedDepth = 8;
     private bool _leftPressArmed;
@@ -203,6 +204,8 @@ public sealed class Game1 : Game
         if (!promotionReady && Pressed(keyboard, Keys.R)) ResetGame();
         if (Pressed(keyboard, Keys.U)) Undo();
         if (!promotionReady && Pressed(keyboard, Keys.M)) ToggleMinesweeper();
+        if (!promotionReady && _model.MinesweeperEnabled && Pressed(keyboard, Keys.B))
+            _showBotMarks = !_showBotMarks;
         if (IsHumanTurn && _model.MinesweeperEnabled && Pressed(keyboard, Keys.X)) CycleScoutPattern();
         if (IsHumanTurn && _model.MinesweeperEnabled && Pressed(keyboard, Keys.S)) Scout();
         if (IsHumanTurn && (Pressed(keyboard, Keys.D1) || Pressed(keyboard, Keys.NumPad1)))
@@ -419,6 +422,8 @@ public sealed class Game1 : Game
 
         _botDelayRemaining -= elapsed;
         if (_botDelayRemaining > 0) return;
+        _bot.ScoutAndMark(_model);
+        _positionVersion++;
         var searchPosition = _model.CloneForSimulation();
         _botSearchVersion = _positionVersion;
         _botSearch = Task.Run(() => _bot.ChooseMove(searchPosition));
@@ -458,6 +463,11 @@ public sealed class Game1 : Game
         {
             if (!_modeButtons[i].Contains(point)) continue;
             SetMatchMode((MatchMode)i);
+            return;
+        }
+        if (_model.MinesweeperEnabled && new Rectangle(1090, 110, 116, 25).Contains(point))
+        {
+            _showBotMarks = !_showBotMarks;
             return;
         }
         if (new Rectangle(1214, 110, 158, 25).Contains(point)) { ToggleMinesweeper(); return; }
@@ -669,7 +679,8 @@ public sealed class Game1 : Game
         GraphicsDevice.Clear(new Color(7, 11, 20));
         DrawBackdrop();
         var legalMoves = _preImpactTerrain is null ? _model.LegalMoves() : Array.Empty<Int3>();
-        _world.Draw(_model, _preImpactTerrain, _preImpactMines, _preImpactClues, RenderPieces(), legalMoves);
+        _world.Draw(_model, _preImpactTerrain, _preImpactMines, _preImpactClues,
+            RenderPieces(), legalMoves, _showBotMarks);
         DrawInterface();
 
         GraphicsDevice.SetRenderTarget(null);
@@ -756,6 +767,8 @@ public sealed class Game1 : Game
         DrawText("TERRARIUM", new Vector2(1090, 27), new Color(82, 241, 216), .88f);
         DrawText("GLADIATORS", new Vector2(1090, 58), new Color(236, 226, 200), .88f);
         DrawText($"TRUE 3D / {_world.ElevationDegrees:00}° / ZOOM {_world.Zoom * 100:000}%", new Vector2(1092, 94), new Color(110, 145, 151), .43f);
+        if (_model.MinesweeperEnabled)
+            DrawSmallButton(new Rectangle(1090, 110, 116, 25), $"B  MARKS: {(_showBotMarks ? "ON" : "OFF")}");
         DrawSmallButton(new Rectangle(1214, 110, 158, 25), $"M  MINES: {(_model.MinesweeperEnabled ? "ON" : "OFF")}");
         DrawText("?", new Vector2(1343, 31), new Color(113, 220, 209), .82f);
 

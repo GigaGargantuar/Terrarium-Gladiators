@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { TerrariumModel, Side, Kind, Plane, chooseBotMove } from "../docs/js/engine.js";
+import { TerrariumModel, Side, Kind, Plane, chooseBotMove, prepareBotTurn } from "../docs/js/engine.js";
 
 const tacticalPiece = (id, side, kind, x, y, z = 0) =>
   ({ id, side, kind, position:{ x, y, z }, hasMoved:true });
@@ -312,6 +312,46 @@ test("bot move selection supports White for Bot vs Bot mode", () => {
   ], Side.WHITE);
 
   assert.ok(chooseBotMove(game, 4));
+});
+
+test("bot search receives confirmed mines but never the hidden minefield", () => {
+  const game = new TerrariumModel(false);
+  game.solids = new Uint8Array(8 * 8 * 16);
+  game.mines = new Uint8Array(8 * 8 * 16);
+  game.botMineFlags = new Set(["1,1,0"]);
+  game.botSafeMarks = new Set();
+  game.setSolid(1, 1, 0, true);
+  game.setSolid(2, 2, 0, true);
+  game.mines[game.solidIndex(1, 1, 0)] = 1;
+  game.mines[game.solidIndex(2, 2, 0)] = 1;
+
+  const visible = game.cloneForBotSearch();
+  assert.equal(visible.mineAt(1, 1, 0), true, "confirmed flag is retained");
+  assert.equal(visible.mineAt(2, 2, 0), false, "unobserved mine is stripped");
+});
+
+test("bot uses free piece scouting and visible clue deduction to place its own markers", () => {
+  const scouted = new TerrariumModel(false);
+  scouted.solids = new Uint8Array(8 * 8 * 16);
+  scouted.mines = new Uint8Array(8 * 8 * 16);
+  scouted.revealedClues = new Set();scouted.botSafeMarks = new Set();scouted.botMineFlags = new Set();
+  scouted.cavernProtected = new Set();scouted.disturbedTerrain = new Set();
+  scouted.minesweeperEnabled = true;scouted.turn = Side.WHITE;scouted.plane = Plane.XY;scouted.winner = null;scouted.selectedId = null;
+  scouted.pieces = [tacticalPiece(1, Side.WHITE, Kind.PAWN, 3, 3, 1)];
+  scouted.setSolid(3, 4, 1, true);scouted.setSolid(3, 3, 2, true);
+  scouted.mines[scouted.solidIndex(3, 4, 1)] = 1;
+  prepareBotTurn(scouted);
+  assert.equal(scouted.botMineFlags.has("3,4,1"), true, "missing clue on a scanned cell identifies a mine");
+  assert.equal(scouted.botSafeMarks.has("3,3,2"), true, "safe scanned terrain is marked clear");
+
+  const deduced = new TerrariumModel(false);
+  deduced.solids = new Uint8Array(8 * 8 * 16);deduced.mines = new Uint8Array(8 * 8 * 16);
+  deduced.revealedClues = new Set(["0,0,0"]);deduced.botSafeMarks = new Set();deduced.botMineFlags = new Set();
+  deduced.cavernProtected = new Set();deduced.disturbedTerrain = new Set();
+  deduced.minesweeperEnabled = true;deduced.turn = Side.BLACK;deduced.plane = Plane.XY;deduced.winner = null;deduced.selectedId = null;deduced.pieces = [];
+  deduced.setSolid(1, 1, 0, true);deduced.mines[deduced.solidIndex(1, 1, 0)] = 1;
+  prepareBotTurn(deduced);
+  assert.equal(deduced.botMineFlags.has("1,1,0"), true, "a one-cell clue constraint is solved by deduction");
 });
 
 test("the Minesweeper addon is opt-in and builds a safe-top clue field", () => {
