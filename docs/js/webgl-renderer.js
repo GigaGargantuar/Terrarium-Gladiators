@@ -102,16 +102,17 @@ export class WorldRenderer {
     const w=Math.round(this.width*this.pixelRatio),h=Math.round(this.height*this.pixelRatio);if(this.canvas.width!==w||this.canvas.height!==h){this.canvas.width=w;this.canvas.height=h}this.gl.viewport(0,0,w,h);this.updateCamera();
   }
   updateCamera(){
-    this.target=vec(3.5,3.5,7.4+this.heightOffset);const d=13,e=d*Math.tan(this.elevation*Math.PI/180);
-    this.camera=add(this.target,vec(Math.sin(this.yaw)*d,-Math.cos(this.yaw)*d,e));this.forward=norm(sub(this.target,this.camera));this.right=norm(cross(this.forward,vec(0,0,1)));this.up=norm(cross(this.right,this.forward));
+    this.target=vec(3.5,3.5,7.4+this.heightOffset);const distance=18.384777,elevation=Math.max(-90,Math.min(90,this.elevation))*Math.PI/180,horizontal=vec(Math.sin(this.yaw),-Math.cos(this.yaw),0),radial=add(mul(horizontal,Math.cos(elevation)),vec(0,0,Math.sin(elevation)));
+    this.camera=add(this.target,mul(radial,distance));this.forward=mul(radial,-1);this.right=vec(Math.cos(this.yaw),Math.sin(this.yaw),0);this.up=norm(cross(this.right,this.forward));this.clueAway=mul(horizontal,-1);
     this.orthoHeight=17.6;this.orthoWidth=this.orthoHeight*(this.width/this.height);
   }
   project(p){const d=sub(p,this.camera),x=dot(d,this.right)/(this.orthoWidth/2),y=dot(d,this.up)/(this.orthoHeight/2);return{x:(x*.5+.5)*this.width,y:(.5-y*.5)*this.height,depth:dot(d,this.forward)}}
-  targetPoint(model,target){return this.moveGeometry(model,target,model.isExcavationTarget(target)).center}
+  isTrue3DDestination(model,target){const piece=model.selected;if(!piece)return false;return target.x!==piece.position.x&&target.y!==piece.position.y&&target.z!==piece.position.z}
+  targetPoint(model,target){const excavation=model.isExcavationTarget(target);return this.isTrue3DDestination(model,target)&&!excavation?vec(target.x,target.y,target.z+.49):this.moveGeometry(model,target,excavation).center}
   moveGeometry(model,target,excavation){
     if(model.plane===Plane.XZ){const n=this.camera.y>=target.y?vec(0,1,0):vec(0,-1,0),off=excavation?.505:.012;return{center:add(vec(target.x,target.y,target.z+.49),mul(n,off)),u:vec(1,0,0),v:vec(0,0,1),normal:n}}
     if(model.plane===Plane.YZ){const n=this.camera.x>=target.x?vec(1,0,0):vec(-1,0,0),off=excavation?.505:.012;return{center:add(vec(target.x,target.y,target.z+.49),mul(n,off)),u:vec(0,1,0),v:vec(0,0,1),normal:n}}
-    return{center:vec(target.x,target.y,excavation?target.z+1.025:target.z+.025),u:vec(1,0,0),v:vec(0,1,0),normal:vec(0,0,1)};
+    const above=this.camera.z>=target.z+.5,normal=vec(0,0,above?1:-1),z=excavation?(above?target.z+1.025:target.z-.025):target.z+(above?.025:-.025);return{center:vec(target.x,target.y,z),u:vec(1,0,0),v:vec(0,above?1:-1,0),normal};
   }
   solid(solids,x,y,z){return x>=0&&x<8&&y>=0&&y<8&&z>=0&&z<16&&solids[x*128+y*16+z]===1}
   terrainColor(x,y,z,factor=1,opacity=1){const c=(x+y+z)%2===0?color(237,214,176):color(184,135,98);return alpha(shade(c,factor),opacity)}
@@ -125,16 +126,18 @@ export class WorldRenderer {
     else q(vec(mx.x,mx.y,mn.z),vec(mn.x,mx.y,mn.z),vec(mn.x,mx.y,mx.z),vec(mx.x,mx.y,mx.z));
   }
   buildTerrain(mesh,solids){
+    const focusStart=Math.max(0,Math.min(14,this.focusLayer)),inFocus=z=>z>=focusStart&&z<=focusStart+1;
     for(let x=0;x<8;x++)for(let y=0;y<8;y++)for(let z=0;z<16;z++){
-      if(!this.solid(solids,x,y,z)||this.layerFocus&&z!==this.focusLayer)continue;
+      if(!this.solid(solids,x,y,z)||this.layerFocus&&!inFocus(z))continue;
       if(this.layerFocus){const top=this.terrainColor(x,y,z,1.18),side=this.terrainColor(x,y,z,.78);this.cellFace(mesh,x,y,z,"top",top);this.cellFace(mesh,x,y,z,"bottom",side);if(!this.solid(solids,x+1,y,z))this.cellFace(mesh,x,y,z,"east",side);if(!this.solid(solids,x-1,y,z))this.cellFace(mesh,x,y,z,"west",side);if(!this.solid(solids,x,y-1,z))this.cellFace(mesh,x,y,z,"north",side);if(!this.solid(solids,x,y+1,z))this.cellFace(mesh,x,y,z,"south",side);continue}
       const top=this.terrainColor(x,y,z,1),a=this.terrainColor(x,y,z,.68),b=this.terrainColor(x,y,z,.51);
       if(!this.solid(solids,x,y,z+1))this.cellFace(mesh,x,y,z,"top",top);if(!this.solid(solids,x,y,z-1))this.cellFace(mesh,x,y,z,"bottom",b);if(!this.solid(solids,x+1,y,z))this.cellFace(mesh,x,y,z,"east",a);if(!this.solid(solids,x-1,y,z))this.cellFace(mesh,x,y,z,"west",b);if(!this.solid(solids,x,y+1,z))this.cellFace(mesh,x,y,z,"south",a);if(!this.solid(solids,x,y-1,z))this.cellFace(mesh,x,y,z,"north",b);
     }
-    if(this.layerFocus){const z=this.focusLayer+.012,c=vec(3.5,3.5,z);mesh.quad(vec(-.55,-.55,z),vec(7.55,-.55,z),vec(7.55,7.55,z),vec(-.55,7.55,z),color(65,235,213,22),true);mesh.planeFrame(c,vec(1,0,0),vec(0,1,0),8.18,color(93,255,229,155),.035,vec(0,0,1))}
+    if(this.layerFocus)for(let layer=focusStart;layer<=focusStart+1;layer++){const z=layer+.012,c=vec(3.5,3.5,z);mesh.quad(vec(-.55,-.55,z),vec(7.55,-.55,z),vec(7.55,7.55,z),vec(-.55,7.55,z),color(65,235,213,22),true);mesh.planeFrame(c,vec(1,0,0),vec(0,1,0),8.18,color(93,255,229,155),.035,vec(0,0,1))}
   }
   buildHints(mesh,model,moves){
     for(const target of moves){const out=model.predictOutcome(target),col=out===Outcome.FATAL?color(255,76,86,215):(out===Outcome.EXCAVATION||out===Outcome.CRATER)?color(255,185,72,210):color(72,245,209,190),g=this.moveGeometry(model,target,model.isExcavationTarget(target)),h=.39;
+      if(this.isTrue3DDestination(model,target)&&!model.isExcavationTarget(target)){mesh.box(vec(target.x,target.y,target.z+.49),vec(.34,.34,.34),col,true);continue}
       const a=sub(sub(g.center,mul(g.u,h)),mul(g.v,h)),b=add(sub(g.center,mul(g.v,h)),mul(g.u,h)),c=add(add(g.center,mul(g.u,h)),mul(g.v,h)),d=add(sub(g.center,mul(g.u,h)),mul(g.v,h));
       if(dot(cross(sub(b,a),sub(c,a)),g.normal)>=0)mesh.quad(a,b,c,d,col,true);else mesh.quad(d,c,b,a,col,true);mesh.planeFrame(add(g.center,mul(g.normal,.006)),g.u,g.v,.78,shade(col,1.3),.025,g.normal);
     }
@@ -143,8 +146,9 @@ export class WorldRenderer {
     const glyphs={0:"abcdef",1:"bc",2:"abdeg",3:"abcdg",4:"bcfg",5:"acdfg",6:"acdefg",7:"abc",8:"abcdefg",9:"abcdfg"};
     const segments={a:[0,.25,1],b:[.16,.13,0],c:[.16,-.13,0],d:[0,-.25,1],e:[-.16,-.13,0],f:[-.16,.13,0],g:[0,0,1]};
     const mineAt=(x,y,z)=>x>=0&&x<8&&y>=0&&y<8&&z>=0&&z<16&&!!mines[model.solidIndex(x,y,z)],clueAt=(x,y,z)=>{if(x< -1||x>8||y< -1||y>8||z< -1||z>16||mineAt(x,y,z))return null;let count=0;for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)for(let dz=-1;dz<=1;dz++)if(mineAt(x+dx,y+dy,z+dz))count++;return count};
-    for(const encoded of revealedClues??[]){const[x,y,z]=encoded.split(",").map(Number),clue=clueAt(x,y,z);if(clue==null||(!this.layerFocus&&clue===0)||(this.layerFocus&&z!==this.focusLayer)||this.solid(solids,x,y,z))continue;
-      const digits=String(clue),scale=digits.length>1?.68:1,col=clue>=4?color(255,102,122):clue>=2?color(255,209,102):clue===0?color(54,115,119):color(127,255,240),away=norm(vec(this.forward.x,this.forward.y,0)),right=norm(vec(this.right.x,this.right.y,0));
+    const focusStart=Math.max(0,Math.min(14,this.focusLayer));
+    for(const encoded of revealedClues??[]){const[x,y,z]=encoded.split(",").map(Number),clue=clueAt(x,y,z);if(clue==null||(!this.layerFocus&&clue===0)||(this.layerFocus&&(z<focusStart||z>focusStart+1))||this.solid(solids,x,y,z))continue;
+      const digits=String(clue),scale=digits.length>1?.68:1,col=clue>=4?color(255,102,122):clue>=2?color(255,209,102):clue===0?color(54,115,119):color(127,255,240),projectedForward=vec(this.forward.x,this.forward.y,0),away=dot(projectedForward,projectedForward)>.000001?norm(projectedForward):this.clueAway,right=norm(vec(this.right.x,this.right.y,0));
       for(let index=0;index<digits.length;index++){const offset=(index-(digits.length-1)/2)*.38*scale;for(const id of glyphs[digits[index]]??[]){const[sx,sy,horizontal]=segments[id],center=add(vec(x,y,z+.055),add(mul(right,offset+sx*scale),mul(away,sy*scale))),size=horizontal?vec(.30*scale,.065*scale,.07):vec(.065*scale,.23*scale,.07);mesh.planeBox(center,right,away,size,col)}}
     }
   }

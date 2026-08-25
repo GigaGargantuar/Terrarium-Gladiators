@@ -24,10 +24,12 @@ public sealed class ChessPiece
     public Int3 Position { get; set; }
     public bool HasMoved { get; set; }
     public bool Promoted { get; set; }
+    public bool PawnOrigin { get; set; }
 
     public ChessPiece Clone() => new()
     {
-        Id = Id, Side = Side, Kind = Kind, Position = Position, HasMoved = HasMoved, Promoted = Promoted
+        Id = Id, Side = Side, Kind = Kind, Position = Position, HasMoved = HasMoved,
+        Promoted = Promoted, PawnOrigin = PawnOrigin
     };
 }
 
@@ -671,12 +673,15 @@ public sealed class TerrariumModel
         if (Pieces.Contains(piece) && piece.Kind == PieceKind.Pawn && OnEnemyBackRank(piece))
         {
             PendingPromotionPieceId = piece.Id;
-            events.Add("Pawn reached the far rank — choose a true-3D promotion.");
+            events.Add("Pawn reached the far rank — choose a promotion, then return it home to awaken true-3D movement.");
         }
-        foreach (var candidate in Pieces.Where(p => p.Kind != PieceKind.Pawn && !p.Promoted && OnEnemyBackRank(p)))
+        foreach (var candidate in Pieces.Where(p => p.Kind != PieceKind.Pawn && !p.Promoted &&
+                     (p.PawnOrigin ? OnOwnHomeRank(p) : OnEnemyBackRank(p))))
         {
             candidate.Promoted = true;
-            events.Add($"{candidate.Side} {candidate.Kind} awakened its true-3D movement.");
+            events.Add(candidate.PawnOrigin
+                ? $"{candidate.Side} {candidate.Kind} returned home and awakened its true-3D movement."
+                : $"{candidate.Side} {candidate.Kind} awakened its true-3D movement.");
         }
 
         var moved = excavating
@@ -701,14 +706,16 @@ public sealed class TerrariumModel
         var pawn = Pieces.FirstOrDefault(piece => piece.Id == pieceId && piece.Kind == PieceKind.Pawn);
         if (pawn is null) return false;
         pawn.Kind = kind;
-        pawn.Promoted = true;
+        pawn.Promoted = false;
+        pawn.PawnOrigin = true;
         PendingPromotionPieceId = null;
-        Message = $"{pawn.Side} Pawn promoted to {kind} with true-3D movement.";
+        Message = $"{pawn.Side} Pawn promoted to {kind}. Return it to its own home rank to awaken true-3D movement.";
         if (Winner is null) Turn = Turn == Side.White ? Side.Black : Side.White;
         return true;
     }
 
     private static bool OnEnemyBackRank(ChessPiece piece) => piece.Side == Side.White ? piece.Position.Y == 7 : piece.Position.Y == 0;
+    private static bool OnOwnHomeRank(ChessPiece piece) => piece.Side == Side.White ? piece.Position.Y == 0 : piece.Position.Y == 7;
 
     private bool RemoveTerrain(Int3 p, List<string> events, int? pieceId = null, Int3? contact = null)
     {

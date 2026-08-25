@@ -318,9 +318,29 @@ test("Trishop is a pawn-only underpromotion with (1,1,1) sliding", () => {
   ], Side.WHITE);
   game.pendingPromotionPieceId=1;
   assert.equal(game.promote(Kind.TRISHOP), true);
-  assert.equal(game.pieces[0].promoted, true);
+  assert.equal(game.pieces[0].promoted, false);
+  assert.equal(game.pieces[0].pawnOrigin, true);
   assert.equal(game.pieces[0].kind, Kind.TRISHOP);
   assert.ok(game.legalMoves(game.pieces[0]).some(move => move.x===3&&move.y===6&&move.z===1));
+});
+
+test("a pawn-origin piece unlocks upgraded movement only after returning home", () => {
+  const game=tacticalPosition([
+    tacticalPiece(1,Side.WHITE,Kind.PAWN,2,7),
+    tacticalPiece(2,Side.WHITE,Kind.KING,7,0),
+    tacticalPiece(3,Side.BLACK,Kind.KING,7,7),
+  ],Side.WHITE);
+  game.pendingPromotionPieceId=1;
+  assert.equal(game.promote(Kind.ROOK),true);
+  const rook=game.pieces[0];game.plane=Plane.XY;
+  assert.equal(rook.promoted,false);
+  assert.equal(game.legalMoves(rook).some(move=>move.x===3&&move.y===6&&move.z===1),false);
+
+  game.turn=Side.WHITE;assert.equal(game.select(rook.id),true);
+  assert.equal(game.tryMove({x:2,y:0,z:0}),true);
+  assert.equal(rook.promoted,true);
+  assert.ok(game.legalMoves(rook).some(move=>move.x===3&&move.y===1&&move.z===1));
+  assert.match(game.message,/returned home and awakened/);
 });
 
 test("scouting reveals a selected movement component without spending the turn", () => {

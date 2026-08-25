@@ -27,6 +27,8 @@ public sealed class WorldRenderer : IDisposable
     public float CameraZ => _cameraPosition.Z;
     public bool LayerFocus { get; set; }
     public int FocusLayer { get; set; } = 8;
+    private int FocusStart => Math.Clamp(FocusLayer, 0, 14);
+    private bool InFocusWindow(int z) => z >= FocusStart && z <= FocusStart + 1;
 
     public WorldRenderer(GraphicsDevice graphics)
     {
@@ -75,8 +77,11 @@ public sealed class WorldRenderer : IDisposable
     public Vector2 ProjectTarget(TerrariumModel model, Int3 target)
     {
         UpdateCamera();
-        var geometry = MoveHintGeometry(model, target, model.IsExcavationTarget(target));
-        var projected = _worldViewport.Project(geometry.Center, _projection, _view, Matrix.Identity);
+        var excavation = model.IsExcavationTarget(target);
+        var center = IsTrue3DDestination(model, target) && !excavation
+            ? new Vector3(target.X, target.Y, target.Z + .49f)
+            : MoveHintGeometry(model, target, excavation).Center;
+        var projected = _worldViewport.Project(center, _projection, _view, Matrix.Identity);
         return new Vector2(projected.X, projected.Y);
     }
 
@@ -84,12 +89,14 @@ public sealed class WorldRenderer : IDisposable
     {
         _worldViewport = new Viewport(0, 0, 1050, 900);
         var target = new Vector3(3.5f, 3.5f, 7.4f + HeightOffset);
-        const float horizontalDistance = 13f;
-        var verticalDistance = horizontalDistance * MathF.Tan(MathHelper.ToRadians(ElevationDegrees));
-        var horizontal = new Vector3(MathF.Sin(Yaw) * horizontalDistance,
-            -MathF.Cos(Yaw) * horizontalDistance, 0);
-        _cameraPosition = target + horizontal + Vector3.UnitZ * verticalDistance;
-        _view = Matrix.CreateLookAt(_cameraPosition, target, Vector3.UnitZ);
+        const float orbitDistance = 18.384777f;
+        var elevation = MathHelper.ToRadians(MathHelper.Clamp(ElevationDegrees, -90f, 90f));
+        var horizontal = new Vector3(MathF.Sin(Yaw), -MathF.Cos(Yaw), 0);
+        var right = new Vector3(MathF.Cos(Yaw), MathF.Sin(Yaw), 0);
+        var radial = horizontal * MathF.Cos(elevation) + Vector3.UnitZ * MathF.Sin(elevation);
+        _cameraPosition = target + radial * orbitDistance;
+        var cameraUp = Vector3.Normalize(Vector3.Cross(radial, right));
+        _view = Matrix.CreateLookAt(_cameraPosition, target, cameraUp);
         var height = 17.6f;
         var width = height * _worldViewport.AspectRatio;
         _projection = Matrix.CreateOrthographic(width, height, .1f, 80f);
@@ -115,7 +122,7 @@ public sealed class WorldRenderer : IDisposable
         for (var z = 0; z < 16; z++)
         {
             if (!solids[x, y, z]) continue;
-            if (z == FocusLayer) AddSliceCube(solids, x, y, z);
+            if (InFocusWindow(z)) AddSliceCube(solids, x, y, z);
         }
     }
 
@@ -147,11 +154,14 @@ public sealed class WorldRenderer : IDisposable
     private void BuildLayerGuide()
     {
         if (!LayerFocus) return;
-        var z = FocusLayer + .012f;
         var color = new Color(65, 235, 213, 22);
-        AddQuad(new Vector3(-.55f, -.55f, z), new Vector3(7.55f, -.55f, z),
-            new Vector3(7.55f, 7.55f, z), new Vector3(-.55f, 7.55f, z), color, true);
-        AddFrame(new Vector3(3.5f, 3.5f, z), new Vector2(8.18f), new Color(93, 255, 229, 155), .035f);
+        for (var layer = FocusStart; layer <= FocusStart + 1; layer++)
+        {
+            var z = layer + .012f;
+            AddQuad(new Vector3(-.55f, -.55f, z), new Vector3(7.55f, -.55f, z),
+                new Vector3(7.55f, 7.55f, z), new Vector3(-.55f, 7.55f, z), color, true);
+            AddFrame(new Vector3(3.5f, 3.5f, z), new Vector2(8.18f), new Color(93, 255, 229, 155), .035f);
+        }
     }
 
     private void BuildMoveHints(TerrariumModel model, IReadOnlyList<Int3> moves)
@@ -166,6 +176,11 @@ public sealed class WorldRenderer : IDisposable
                 MoveOutcome.Fatal => new Color(255, 76, 86, 215),
                 _ => new Color(72, 245, 209, 190)
             };
+            if (IsTrue3DDestination(model, target) && !excavation)
+            {
+                AddBox(new Vector3(target.X, target.Y, target.Z + .49f), new Vector3(.34f), color, true);
+                continue;
+            }
             var geometry = MoveHintGeometry(model, target, excavation);
             const float halfSize = .39f;
             AddQuad(geometry.Center - geometry.U * halfSize - geometry.V * halfSize,
@@ -177,12 +192,19 @@ public sealed class WorldRenderer : IDisposable
         }
     }
 
+    private static bool IsTrue3DDestination(TerrariumModel model, Int3 target)
+    {
+        if (model.Selected is not { } piece) return false;
+        var delta = target - piece.Position;
+        return delta.X != 0 && delta.Y != 0 && delta.Z != 0;
+    }
+
     private void BuildClues(TerrariumModel model, bool[,,] solids, bool[,,] mines, IReadOnlySet<Int3> revealedClues)
     {
         foreach (var cell in revealedClues)
         {
             var clue = ClueAt(cell, mines);
-            if (clue is null || (!LayerFocus && clue == 0) || (LayerFocus && cell.Z != FocusLayer) ||
+            if (clue is null || (!LayerFocus && clue == 0) || (LayerFocus && !InFocusWindow(cell.Z)) ||
                 Solid(solids, cell.X, cell.Y, cell.Z)) continue;
 
             var digits = clue.Value.ToString();
@@ -190,7 +212,8 @@ public sealed class WorldRenderer : IDisposable
             var color = clue >= 4 ? new Color(255, 102, 122) :
                 clue >= 2 ? new Color(255, 209, 102) : clue == 0 ? new Color(54, 115, 119) : new Color(127, 255, 240);
             var away = new Vector3(3.5f - _cameraPosition.X, 3.5f - _cameraPosition.Y, 0);
-            away = away.LengthSquared() > .0001f ? Vector3.Normalize(away) : Vector3.UnitY;
+            away = away.LengthSquared() > .0001f ? Vector3.Normalize(away) :
+                new Vector3(-MathF.Sin(Yaw), MathF.Cos(Yaw), 0);
             var right = new Vector3(away.Y, -away.X, 0);
             for (var index = 0; index < digits.Length; index++)
             {
@@ -238,8 +261,11 @@ public sealed class WorldRenderer : IDisposable
         var b11 = center + hu + hv - hw; var b01 = center - hu + hv - hw;
         var t00 = b00 + hw * 2; var t10 = b10 + hw * 2; var t11 = b11 + hw * 2; var t01 = b01 + hw * 2;
         AddQuad(t00, t10, t11, t01, color, false);
+        AddQuad(b01, b11, b10, b00, Color.Multiply(color, .48f), false);
         AddQuad(b10, b11, t11, t10, Color.Multiply(color, .72f), false);
         AddQuad(b01, b00, t00, t01, Color.Multiply(color, .58f), false);
+        AddQuad(b00, b10, t10, t00, Color.Multiply(color, .57f), false);
+        AddQuad(b11, b01, t01, t11, Color.Multiply(color, .68f), false);
     }
 
     private (Vector3 Center, Vector3 U, Vector3 V, Vector3 Normal) MoveHintGeometry(
@@ -264,8 +290,10 @@ public sealed class WorldRenderer : IDisposable
                 Vector3.UnitY, Vector3.UnitZ, normal);
         }
 
-        var z = excavation ? target.Z + 1.025f : target.Z + .025f;
-        return (new Vector3(target.X, target.Y, z), Vector3.UnitX, Vector3.UnitY, Vector3.UnitZ);
+        var above = _cameraPosition.Z >= target.Z + .5f;
+        var normalZ = above ? Vector3.UnitZ : -Vector3.UnitZ;
+        var z = excavation ? (above ? target.Z + 1.025f : target.Z - .025f) : target.Z + (above ? .025f : -.025f);
+        return (new Vector3(target.X, target.Y, z), Vector3.UnitX, above ? Vector3.UnitY : -Vector3.UnitY, normalZ);
     }
 
     private Vector3 CameraFacingNormal(Vector3 axis, float coordinate)
@@ -425,8 +453,11 @@ public sealed class WorldRenderer : IDisposable
     {
         var min = center - size / 2f; var max = center + size / 2f;
         AddQuad(new(min.X, min.Y, max.Z), new(max.X, min.Y, max.Z), new(max.X, max.Y, max.Z), new(min.X, max.Y, max.Z), color, transparent);
+        AddQuad(new(min.X, max.Y, min.Z), new(max.X, max.Y, min.Z), new(max.X, min.Y, min.Z), new(min.X, min.Y, min.Z), Color.Multiply(color, .48f), transparent);
         AddQuad(new(max.X, min.Y, min.Z), new(max.X, max.Y, min.Z), new(max.X, max.Y, max.Z), new(max.X, min.Y, max.Z), Color.Multiply(color, .72f), transparent);
         AddQuad(new(min.X, max.Y, min.Z), new(min.X, min.Y, min.Z), new(min.X, min.Y, max.Z), new(min.X, max.Y, max.Z), Color.Multiply(color, .58f), transparent);
+        AddQuad(new(min.X, min.Y, min.Z), new(max.X, min.Y, min.Z), new(max.X, min.Y, max.Z), new(min.X, min.Y, max.Z), Color.Multiply(color, .57f), transparent);
+        AddQuad(new(max.X, max.Y, min.Z), new(min.X, max.Y, min.Z), new(min.X, max.Y, max.Z), new(max.X, max.Y, max.Z), Color.Multiply(color, .68f), transparent);
     }
 
     private void AddDisc(Vector3 center, float radius, int segments, Color color, bool transparent)

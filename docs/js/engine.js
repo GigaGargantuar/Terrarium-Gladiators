@@ -12,7 +12,7 @@ const sub = (a, b) => v(a.x - b.x, a.y - b.y, a.z - b.z);
 const mul = (a, n) => v(a.x * n, a.y * n, a.z * n);
 const eq = (a, b) => !!a && !!b && a.x === b.x && a.y === b.y && a.z === b.z;
 const key = p => `${p.x},${p.y},${p.z}`;
-const clonePiece = p => ({ id: p.id, side: p.side, kind: p.kind, position: { ...p.position }, hasMoved: p.hasMoved, promoted: !!p.promoted });
+const clonePiece = p => ({ id: p.id, side: p.side, kind: p.kind, position: { ...p.position }, hasMoved: p.hasMoved, promoted: !!p.promoted, pawnOrigin:!!p.pawnOrigin });
 const other = side => side === Side.WHITE ? Side.BLACK : Side.WHITE;
 const planes = [Plane.XY, Plane.XZ, Plane.YZ];
 
@@ -62,8 +62,8 @@ export class TerrariumModel {
   addArmy(side, homeY, pawnY) {
     const back = [Kind.ROOK, Kind.KNIGHT, Kind.BISHOP, Kind.QUEEN, Kind.KING, Kind.BISHOP, Kind.KNIGHT, Kind.ROOK];
     for (let x = 0; x < 8; x++) {
-      this.pieces.push({ id: this.nextId++, side, kind: back[x], position: v(x, homeY, 8), hasMoved: false, promoted:false });
-      this.pieces.push({ id: this.nextId++, side, kind: Kind.PAWN, position: v(x, pawnY, 8), hasMoved: false, promoted:false });
+      this.pieces.push({ id: this.nextId++, side, kind: back[x], position: v(x, homeY, 8), hasMoved: false, promoted:false, pawnOrigin:false });
+      this.pieces.push({ id: this.nextId++, side, kind: Kind.PAWN, position: v(x, pawnY, 8), hasMoved: false, promoted:false, pawnOrigin:false });
     }
   }
 
@@ -277,14 +277,15 @@ export class TerrariumModel {
     if(piece.kind===Kind.PAWN&&this.plane===Plane.XY&&from.z===target.z&&Math.abs(target.y-from.y)===2){this.enPassantPawnId=piece.id;this.enPassantTarget=v(from.x,(from.y+target.y)/2,from.z);}
     if(this.winner)return this.finishMove();
     this.resolveGravity(events,releases?piece.id:null);
-    if(this.pieces.includes(piece)&&piece.kind===Kind.PAWN&&this.onEnemyBackRank(piece)){this.pendingPromotionPieceId=piece.id;events.push("Pawn reached the far rank — choose a true-3D promotion.");}
-    for(const candidate of this.pieces)if(candidate.kind!==Kind.PAWN&&!candidate.promoted&&this.onEnemyBackRank(candidate)){candidate.promoted=true;events.push(`${candidate.side} ${candidate.kind} awakened its true-3D movement.`)}
+    if(this.pieces.includes(piece)&&piece.kind===Kind.PAWN&&this.onEnemyBackRank(piece)){this.pendingPromotionPieceId=piece.id;events.push("Pawn reached the far rank — choose a promotion, then return it home to awaken true-3D movement.");}
+    for(const candidate of this.pieces)if(candidate.kind!==Kind.PAWN&&!candidate.promoted&&(candidate.pawnOrigin?this.onOwnHomeRank(candidate):this.onEnemyBackRank(candidate))){candidate.promoted=true;events.push(candidate.pawnOrigin?`${candidate.side} ${candidate.kind} returned home and awakened its true-3D movement.`:`${candidate.side} ${candidate.kind} awakened its true-3D movement.`)}
     const moved=excavating?`${piece.side} ${piece.kind} excavated along ${this.plane}.`:`${piece.side} ${piece.kind}: ${TerrariumModel.cellName(from)} → ${TerrariumModel.cellName(target)} on ${this.plane}.`;
     this.message=events.length?`${moved}  ${events.join("  ")}`:moved;return this.finishMove();
   }
   finishMove(){this.selectedId=null;if(!this.winner&&this.pendingPromotionPieceId==null)this.turn=other(this.turn);return true;}
   onEnemyBackRank(piece){return piece.side===Side.WHITE?piece.position.y===7:piece.position.y===0}
-  promote(kind){if(![Kind.QUEEN,Kind.ROOK,Kind.BISHOP,Kind.KNIGHT,Kind.TRISHOP].includes(kind)||this.pendingPromotionPieceId==null)return false;const pawn=this.pieces.find(p=>p.id===this.pendingPromotionPieceId&&p.kind===Kind.PAWN);if(!pawn)return false;pawn.kind=kind;pawn.promoted=true;this.pendingPromotionPieceId=null;this.message=`${pawn.side} Pawn promoted to ${kind} with true-3D movement.`;if(!this.winner)this.turn=other(this.turn);return true;}
+  onOwnHomeRank(piece){return piece.side===Side.WHITE?piece.position.y===0:piece.position.y===7}
+  promote(kind){if(![Kind.QUEEN,Kind.ROOK,Kind.BISHOP,Kind.KNIGHT,Kind.TRISHOP].includes(kind)||this.pendingPromotionPieceId==null)return false;const pawn=this.pieces.find(p=>p.id===this.pendingPromotionPieceId&&p.kind===Kind.PAWN);if(!pawn)return false;pawn.kind=kind;pawn.promoted=false;pawn.pawnOrigin=true;this.pendingPromotionPieceId=null;this.message=`${pawn.side} Pawn promoted to ${kind}. Return it to its own home rank to awaken true-3D movement.`;if(!this.winner)this.turn=other(this.turn);return true;}
 
   removeTerrain(p,events,pieceId=null,contact=p){if(!this.isSolid(p))return false;this.setSolid(p.x,p.y,p.z,false);this.lastTerrainChanges?.push({cell:{...p},solid:false,pieceId,contact:{...contact}});this.disturbedTerrain?.add(key(p));this.revealedClues?.add(key(p));if(this.mineAt(p.x,p.y,p.z))this.detonateMine(p,events,pieceId,contact);return true}
   detonateMine(p,events,sourcePieceId=null,contact=p){this.mines[this.solidIndex(p.x,p.y,p.z)]=0;let casualties=0;

@@ -68,13 +68,13 @@ piece will break it; otherwise it is red.
 - `M`: toggle the optional Minesweeper addon (restarts the match)
 - `X`: cycle the selected piece's scouting pattern; `S`: scan for free
 - Left-drag sideways over the world: orbit continuously around the board
-- Left-drag vertically: adjust camera elevation between 30 and 60 degrees
+- Left-drag vertically: orbit through the full −90° to +90° vertical arc
 - Up / Down arrows: translate the camera along world Z
 - `Q`, `E`: rotate the camera by 90 degrees
-- Middle mouse button: toggle single-layer focus
-- Mouse wheel while layer focus is active: select Z0–Z15; every other layer
-  of terrain becomes fully transparent. Chess pieces remain fully visible on
-  every layer, and legal destination highlights remain visible at every depth.
+- Middle mouse button: toggle two-layer focus
+- Mouse wheel while layer focus is active: select adjacent windows from Z0–Z1
+  through Z14–Z15; every other terrain layer is hidden. Chess pieces remain
+  fully visible on every layer, and legal destinations remain visible.
 - `Tab` / `Shift+Tab`: cycle through the current player's pieces
 - `U`: undo
 - `R`: restart
@@ -98,11 +98,15 @@ piece will break it; otherwise it is red.
   applied because this prototype does not enforce check.
 - A pawn reaching the enemy's far Y rank promotes at any elevation. Play pauses
   after landing so White can choose Queen, Rook, Bishop, Knight, or the pawn-only
-  `(1,1,1)`-sliding Trishop; the bot chooses automatically.
+  `(1,1,1)`-sliding Trishop; the bot chooses automatically. A pawn-origin piece
+  must then return to its own home Y rank before its added true-3D movement
+  awakens.
 - Any piece that reaches the enemy back rank awakens true-3D movement that is
   always available regardless of the selected plane. Promoted Bishops, Rooks,
   and Queens add Trishop rays; Kings add one-step space diagonals; Knights add
   every `(1,1,2)` permutation to their ordinary `(0,1,2)` jumps.
+- Empty-cell destinations from true-3D movement are shown as small cubes centered
+  in their cells; plane-based destinations retain their oriented flat markers.
 - The opt-in Minesweeper addon generates a fresh randomized minefield for every
   match below a guaranteed-safe top terrain layer. Its one-cell clue shell
   expands the 8×8×16 play volume to 10×10×18.
@@ -152,9 +156,9 @@ piece will break it; otherwise it is red.
 
 The world renderer uses true 3D geometry rather than screen-space isometric
 tiles. Its orthographic camera begins side-aligned at 45 degrees, supports
-continuous orbit, clamps elevation between 30 and 60 degrees, and translates
-along world Z with the arrow keys.
-It uses depth-tested cube faces, sculpted piece meshes, and true single-layer
+continuous horizontal orbit and a pole-safe 180-degree vertical orbit from
+underneath to overhead, and translates along world Z with the arrow keys.
+It uses depth-tested cube faces, sculpted piece meshes, and true two-layer
 isolation. Piece falls animate with acceleration
 and a landing bounce; captures and crater changes are committed visually only
 at impact, and pieces that perish fade during their fall.

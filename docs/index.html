@@ -70,10 +70,10 @@
       </section>
 
       <section class="camera-controls">
-        <p>Drag X: orbit&nbsp;&nbsp;·&nbsp;&nbsp;Drag Y: 30°–60°</p>
+        <p>Drag X: orbit&nbsp;&nbsp;·&nbsp;&nbsp;Drag Y: −90°–90°</p>
         <button id="layer-toggle" aria-pressed="false"><b>MB&nbsp;&nbsp;LAYER FOCUS: OFF</b></button>
-        <label for="depth-slider">Wheel select depth <output id="depth-output">Z08</output></label>
-        <input id="depth-slider" type="range" min="0" max="15" value="8" disabled>
+        <label for="depth-slider">Wheel select depth <output id="depth-output">Z08–09</output></label>
+        <input id="depth-slider" type="range" min="0" max="14" value="8" disabled>
         <p>H&nbsp;&nbsp;rules&nbsp;&nbsp;·&nbsp;&nbsp;Q / E&nbsp;&nbsp;orbit</p>
       </section>
 
@@ -93,9 +93,9 @@
       <h1>Movement has a third axis.<br>Gravity has consequences.</h1>
       <div class="help-grid">
         <section><b>01</b><h3>Select</h3><p>Click a sculpted piece, then choose a highlighted 3D destination.</p></section>
-        <section><b>02</b><h3>Move the camera</h3><p>Drag to orbit and tilt. Use Up / Down to move the camera target vertically.</p></section>
-        <section><b>03</b><h3>Isolate depth</h3><p>Middle-click, then scroll through Z0–Z15 to inspect a single slice.</p></section>
-        <section><b>04</b><h3>Climb or excavate</h3><p>Vertical pawns need walls: climb, capture, or dig straight up.</p></section>
+        <section><b>02</b><h3>Move the camera</h3><p>Drag vertically through a full 180° orbit, including overhead and underside views. Up / Down shifts the target.</p></section>
+        <section><b>03</b><h3>Isolate depth</h3><p>Middle-click, then scroll through adjacent two-layer windows.</p></section>
+        <section><b>04</b><h3>Climb or excavate</h3><p>Pawns hop vertically anywhere; YZ climbs and upward digging still use walls.</p></section>
         <section><b>05</b><h3>Use gravity</h3><p>Falling pieces accelerate, bounce, crush, or fade on fatal impact.</p></section>
         <section><b>06</b><h3>Optional minefield</h3><p>Enable the addon before play. Select a piece and one of its movement components to reveal number clues. Digging or denting a mine blasts a 3×3×3 area.</p></section>
       </div>
@@ -107,6 +107,7 @@
     <div class="promotion-shell">
       <p class="eyebrow">CHOOSE YOUR PROMOTION</p>
       <h2>The pawn reached the far rank.</h2>
+      <p>Return the new piece to its own home rank to awaken its added true-3D movement.</p>
       <div id="promotion-buttons">
         <button data-kind="Queen">QUEEN <kbd>Q</kbd></button>
         <button data-kind="Rook">ROOK <kbd>R</kbd></button>

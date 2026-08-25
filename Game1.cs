@@ -225,7 +225,7 @@ public sealed class Game1 : Game
         if (mouse.MiddleButton == ButtonState.Pressed && _oldMouse.MiddleButton == ButtonState.Released)
             _depthFocus = !_depthFocus;
         var wheel = mouse.ScrollWheelValue - _oldMouse.ScrollWheelValue;
-        if (_depthFocus && wheel != 0) _selectedDepth = Math.Clamp(_selectedDepth + Math.Sign(wheel), 0, 15);
+        if (_depthFocus && wheel != 0) _selectedDepth = Math.Clamp(_selectedDepth + Math.Sign(wheel), 0, 14);
         _world.LayerFocus = _depthFocus;
         _world.FocusLayer = _selectedDepth;
 
@@ -246,7 +246,7 @@ public sealed class Game1 : Game
             {
                 var delta = mousePoint - _dragLast;
                 _world.Yaw -= delta.X * .009f;
-                _world.ElevationDegrees = MathHelper.Clamp(_world.ElevationDegrees + delta.Y * .18f, 30f, 60f);
+                _world.ElevationDegrees = MathHelper.Clamp(_world.ElevationDegrees + delta.Y * .18f, -90f, 90f);
             }
             _dragLast = mousePoint;
         }
@@ -743,7 +743,7 @@ public sealed class Game1 : Game
             ? $"{_model.Winner.Value.ToString().ToUpper()} WINS"
             : IsBotTurn ? $"{_model.Turn.ToString().ToUpper()} BOT THINKING" : $"{_model.Turn.ToString().ToUpper()} TO MOVE";
         DrawText(headline, new Vector2(1090, 148), sideColor, .78f);
-        DrawText(_model.Selected is null ? "No piece selected" : $"{_model.Selected.Kind}{(_model.Selected.Promoted ? " / TRUE 3D" : "")}  ·  {TerrariumModel.CellName(_model.Selected.Position)}", new Vector2(1090, 183), new Color(139, 170, 173), .55f);
+        DrawText(_model.Selected is null ? "No piece selected" : $"{_model.Selected.Kind}{(_model.Selected.Promoted ? " / TRUE 3D" : _model.Selected.PawnOrigin ? " / RETURN HOME" : "")}  ·  {TerrariumModel.CellName(_model.Selected.Position)}", new Vector2(1090, 183), new Color(139, 170, 173), .55f);
 
         DrawText("MOVEMENT PLANE", new Vector2(1090, 211), new Color(104, 137, 145), .48f);
         for (var i = 0; i < 3; i++) DrawButton(_planeButtons[i], ((MovementPlane)i).ToString(), (int)_model.Plane == i, i + 1);
@@ -764,8 +764,8 @@ public sealed class Game1 : Game
         DrawRule(new Vector2(1090, 581), new Color(255, 99, 92), "2+ CELL DROP", "Impact crushes terrain or piece");
         DrawRule(new Vector2(1090, 639), new Color(242, 179, 87), "4+ / TERRAIN", "Fatal unless a piece breaks the fall");
 
-        DrawText("Drag X: orbit   ·   Drag Y: 30°–60°", new Vector2(1090, 696), new Color(119, 150, 155), .40f);
-        DrawText(_depthFocus ? $"MB  LAYER FOCUS: Z{_selectedDepth:00}" : "MB  LAYER FOCUS: OFF", new Vector2(1090, 720), _depthFocus ? new Color(82, 241, 216) : new Color(119, 150, 155), .48f);
+        DrawText("Drag X: orbit   ·   Drag Y: −90°–90°", new Vector2(1090, 696), new Color(119, 150, 155), .40f);
+        DrawText(_depthFocus ? $"MB  LAYER FOCUS: Z{_selectedDepth:00}–{_selectedDepth + 1:00}" : "MB  LAYER FOCUS: OFF", new Vector2(1090, 720), _depthFocus ? new Color(82, 241, 216) : new Color(119, 150, 155), .48f);
         DrawText("Wheel  select depth   ·   H  rules", new Vector2(1090, 744), new Color(119, 150, 155), .43f);
         DrawSmallButton(new Rectangle(1090, 774, 135, 43), "U  UNDO");
         DrawSmallButton(new Rectangle(1237, 774, 135, 43), "R  RESTART");
@@ -785,7 +785,7 @@ public sealed class Game1 : Game
         _spriteBatch.Draw(_pixel, panel, new Color(16, 25, 39));
         Border(panel, new Color(242, 179, 87), 2);
         DrawText("CHOOSE YOUR PROMOTION", new Vector2(246, 351), new Color(242, 179, 87), 1.02f);
-        DrawText("The pawn reached the far rank. Select its new piece.", new Vector2(270, 401), new Color(169, 190, 188), .58f);
+        DrawText("Choose a piece, then return it home to awaken true-3D movement.", new Vector2(245, 401), new Color(169, 190, 188), .58f);
         for (var i = 0; i < _promotionButtons.Length; i++)
         {
             var rect = _promotionButtons[i];
@@ -802,8 +802,8 @@ public sealed class Game1 : Game
     {
         if (_depthFocus)
         {
-            var at = _world.Project(new Vector3(7.7f, 7.7f, _selectedDepth + .05f));
-            DrawText($"Z{_selectedDepth:00}", at, new Color(94, 255, 229), .55f);
+            var at = _world.Project(new Vector3(7.7f, 7.7f, _selectedDepth + 1.05f));
+            DrawText($"Z{_selectedDepth:00}–{_selectedDepth + 1:00}", at, new Color(94, 255, 229), .55f);
         }
     }
 
@@ -815,9 +815,9 @@ public sealed class Game1 : Game
         DrawText("THE TERRARIUM IN TRUE 3D", new Vector2(350, 171), new Color(82, 241, 216), 1.05f);
         DrawText("The orthographic camera starts at 45° with adjustable orbit, elevation, and Z.", new Vector2(350, 213), new Color(175, 192, 188), .56f);
         DrawHelpStep(1, 350, 283, "SELECT", "Click a sculpted piece, then choose a highlighted 3D destination.");
-        DrawHelpStep(2, 350, 365, "MOVE THE CAMERA", "Drag X to orbit, drag Y for 30°–60°, and use Up / Down for world Z.");
-        DrawHelpStep(3, 350, 447, "ISOLATE DEPTH", "Middle-click, then scroll Z0–Z15. Other layer shells become transparent.");
-        DrawHelpStep(4, 350, 529, "CLIMB OR EXCAVATE", "Vertical pawns need walls: hop, climb/capture on YZ, or dig straight up.");
+        DrawHelpStep(2, 350, 365, "MOVE THE CAMERA", "Drag X to orbit and drag Y through a full 180° vertical arc. Up / Down shifts Z.");
+        DrawHelpStep(3, 350, 447, "ISOLATE DEPTH", "Middle-click, then scroll through adjacent two-layer windows. Other layers are hidden.");
+        DrawHelpStep(4, 350, 529, "CLIMB OR EXCAVATE", "Pawns hop vertically anywhere; YZ climbs and upward digging still use walls.");
         DrawHelpStep(5, 350, 611, "USE GRAVITY", "Falling pieces accelerate, bounce, crush, or fade on fatal impact.");
         DrawText("Press H / Esc to return", new Vector2(350, 720), new Color(233, 222, 194), .58f);
     }

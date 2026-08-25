@@ -12,6 +12,7 @@ const lerp=(a,b,t)=>a+(b-a)*t;
 const isBotTurn=()=>matchMode===MatchMode.BOTVBOT||(matchMode===MatchMode.PVBOT&&model.turn===Side.BLACK);
 const isHumanTurn=()=>!isBotTurn();
 const sideName=side=>side.toUpperCase();
+const layerLabel=()=>`Z${String(renderer.focusLayer).padStart(2,"0")}–${String(renderer.focusLayer+1).padStart(2,"0")}`;
 
 function startBotWorker(){
   botWorker?.terminate();botWorker=new Worker(new URL("./bot-worker.js",import.meta.url),{type:"module"});
@@ -61,7 +62,7 @@ function updateTransition(dt){if(!transitionActive())return;transitionElapsed+=d
 
 function syncUI(){
   const botThinking=!ui.thinking.hidden;ui.turn.textContent=model.winner?`${sideName(model.winner)} WINS`:botThinking?`${sideName(model.turn)} BOT THINKING`:`${sideName(model.turn)} TO MOVE`;ui.turn.classList.toggle("black",model.turn===Side.BLACK&&!model.winner);
-  ui.message.textContent=model.message;const piece=model.selected;ui.selected.textContent=piece?`${piece.kind}${piece.promoted?" ✦":""}  ·  ${TerrariumModel.cellName(piece.position)}`:"No piece selected";
+  ui.message.textContent=model.message;const piece=model.selected,promotionStatus=piece?.promoted?" ✦ TRUE 3D":piece?.pawnOrigin?" ↩ RETURN HOME":"";ui.selected.textContent=piece?`${piece.kind}${promotionStatus}  ·  ${TerrariumModel.cellName(piece.position)}`:"No piece selected";
   ui.thinking.innerHTML=`<i></i> ${sideName(model.turn)} BOT THINKING`;
   ui.role.textContent=matchMode===MatchMode.PVP?"Same-device PvP · pass control each turn":matchMode===MatchMode.BOTVBOT?"Bot vs Bot · spectator mode":"You are White · Black is the bot";
   for(const button of ui.planes)button.setAttribute("aria-checked",String(button.dataset.plane===model.plane));
@@ -102,12 +103,12 @@ function hitAt(point){
 }
 function point(e){const r=canvas.getBoundingClientRect();return{x:e.clientX-r.left,y:e.clientY-r.top}}
 canvas.addEventListener("pointerdown",e=>{if(e.button===1){e.preventDefault();toggleLayer();return}if(e.button!==0)return;canvas.setPointerCapture(e.pointerId);pointerStart=pointerLast=point(e);dragging=false});
-canvas.addEventListener("pointermove",e=>{if(!pointerStart)return;const here=point(e);if(Math.hypot(here.x-pointerStart.x,here.y-pointerStart.y)>5)dragging=true;if(dragging){renderer.yaw-=(here.x-pointerLast.x)*.009;renderer.elevation=Math.max(30,Math.min(60,renderer.elevation+(here.y-pointerLast.y)*.18));renderer.updateCamera();syncUI()}pointerLast=here});
+canvas.addEventListener("pointermove",e=>{if(!pointerStart)return;const here=point(e);if(Math.hypot(here.x-pointerStart.x,here.y-pointerStart.y)>5)dragging=true;if(dragging){renderer.yaw-=(here.x-pointerLast.x)*.009;renderer.elevation=Math.max(-90,Math.min(90,renderer.elevation+(here.y-pointerLast.y)*.18));renderer.updateCamera();syncUI()}pointerLast=here});
 canvas.addEventListener("pointerup",e=>{if(pointerStart&&!dragging)hitAt(point(e));pointerStart=pointerLast=null;dragging=false});canvas.addEventListener("pointercancel",()=>{pointerStart=pointerLast=null;dragging=false});canvas.addEventListener("contextmenu",e=>{e.preventDefault();if(!transitionActive()){model.clearSelection();syncUI()}});
-canvas.addEventListener("wheel",e=>{if(!renderer.layerFocus)return;e.preventDefault();renderer.focusLayer=Math.max(0,Math.min(15,renderer.focusLayer-Math.sign(e.deltaY)));ui.depth.value=renderer.focusLayer;ui.depthOut.value=`Z${String(renderer.focusLayer).padStart(2,"0")}`;dirty=true},{passive:false});
+canvas.addEventListener("wheel",e=>{if(!renderer.layerFocus)return;e.preventDefault();renderer.focusLayer=Math.max(0,Math.min(14,renderer.focusLayer-Math.sign(e.deltaY)));ui.depth.value=renderer.focusLayer;ui.depthOut.value=layerLabel();ui.layer.querySelector("b").textContent=`MB  LAYER FOCUS: ${layerLabel()}`;dirty=true},{passive:false});
 
-function toggleLayer(){renderer.layerFocus=!renderer.layerFocus;ui.layer.setAttribute("aria-pressed",String(renderer.layerFocus));ui.layer.querySelector("b").textContent=`MB  LAYER FOCUS: ${renderer.layerFocus?`Z${String(renderer.focusLayer).padStart(2,"0")}`:"OFF"}`;ui.depth.disabled=!renderer.layerFocus;dirty=true}
-for(const button of ui.planes)button.addEventListener("click",()=>setPlane(button.dataset.plane));ui.layer.addEventListener("click",toggleLayer);ui.depth.addEventListener("input",()=>{renderer.focusLayer=Number(ui.depth.value);ui.depthOut.value=`Z${String(renderer.focusLayer).padStart(2,"0")}`;ui.layer.querySelector("b").textContent=`MB  LAYER FOCUS: Z${String(renderer.focusLayer).padStart(2,"0")}`;dirty=true});
+function toggleLayer(){renderer.layerFocus=!renderer.layerFocus;renderer.focusLayer=Math.max(0,Math.min(14,renderer.focusLayer));ui.layer.setAttribute("aria-pressed",String(renderer.layerFocus));ui.layer.querySelector("b").textContent=`MB  LAYER FOCUS: ${renderer.layerFocus?layerLabel():"OFF"}`;ui.depth.disabled=!renderer.layerFocus;ui.depth.value=renderer.focusLayer;ui.depthOut.value=layerLabel();dirty=true}
+for(const button of ui.planes)button.addEventListener("click",()=>setPlane(button.dataset.plane));ui.layer.addEventListener("click",toggleLayer);ui.depth.addEventListener("input",()=>{renderer.focusLayer=Number(ui.depth.value);ui.depthOut.value=layerLabel();ui.layer.querySelector("b").textContent=`MB  LAYER FOCUS: ${layerLabel()}`;dirty=true});
 document.querySelector("#undo-button").addEventListener("click",undo);document.querySelector("#restart-button").addEventListener("click",reset);document.querySelector("#help-button").addEventListener("click",()=>ui.help.showModal());
 ui.mode.addEventListener("change",()=>setMatchMode(ui.mode.value));
 ui.mine.addEventListener("change",()=>{model.minesweeperEnabled=ui.mine.checked;reset()});
