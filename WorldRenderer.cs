@@ -288,8 +288,10 @@ public sealed class WorldRenderer : IDisposable
 
     private static Color TerrainColor(int x, int y, int z, float shade, float opacity)
     {
-        var baseColor = z < 7 && (x + y) % 2 == 0 ? new Color(38, 92, 91) :
-            (x + y) % 2 == 0 ? new Color(47, 119, 111) : new Color(28, 74, 82);
+        // Including Z in the parity reverses the checkerboard on every layer.
+        var baseColor = (x + y + z) % 2 == 0
+            ? new Color(237, 214, 176)
+            : new Color(184, 135, 98);
         return ApplyOpacity(Color.Multiply(baseColor, shade), opacity);
     }
 

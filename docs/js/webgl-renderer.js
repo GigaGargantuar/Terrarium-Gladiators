@@ -110,7 +110,7 @@ export class WorldRenderer {
     return{center:vec(target.x,target.y,excavation?target.z+1.025:target.z+.025),u:vec(1,0,0),v:vec(0,1,0),normal:vec(0,0,1)};
   }
   solid(solids,x,y,z){return x>=0&&x<8&&y>=0&&y<8&&z>=0&&z<16&&solids[x*128+y*16+z]===1}
-  terrainColor(x,y,z,factor=1,opacity=1){const c=z<7&&(x+y)%2===0?color(38,92,91):(x+y)%2===0?color(47,119,111):color(28,74,82);return alpha(shade(c,factor),opacity)}
+  terrainColor(x,y,z,factor=1,opacity=1){const c=(x+y+z)%2===0?color(237,214,176):color(184,135,98);return alpha(shade(c,factor),opacity)}
   cellFace(mesh,x,y,z,face,col,transparent=false){
     const mn=vec(x-.49,y-.49,z),mx=vec(x+.49,y+.49,z+.98),q=(a,b,c,d)=>mesh.quad(a,b,c,d,col,transparent);
     if(face==="top")q(vec(mn.x,mn.y,mx.z),vec(mx.x,mn.y,mx.z),vec(mx.x,mx.y,mx.z),vec(mn.x,mx.y,mx.z));
