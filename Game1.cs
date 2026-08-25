@@ -28,6 +28,13 @@ public sealed class Game1 : Game
         public bool Applied { get; set; }
     }
 
+    private sealed class PieceRemovalVisual
+    {
+        public int PieceId { get; init; }
+        public float At { get; init; }
+        public bool Applied { get; set; }
+    }
+
     private const int WindowWidth = 1440;
     private const int WindowHeight = 900;
     private const float BotMoveDelay = .45f;
@@ -36,6 +43,7 @@ public sealed class Game1 : Game
     private readonly TerrariumBot _bot = new();
     private readonly List<FallVisual> _falls = new();
     private readonly List<TerrainBreakVisual> _terrainBreaks = new();
+    private readonly List<PieceRemovalVisual> _pieceRemovals = new();
     private SpriteBatch _spriteBatch = null!;
     private SpriteFont _font = null!;
     private Texture2D _pixel = null!;
@@ -158,6 +166,11 @@ public sealed class Game1 : Game
                         _preImpactClues?.Add(change.Cell + new Int3(dx, dy, dz));
                 }
             }
+            foreach (var removal in _pieceRemovals.Where(removal => !removal.Applied && _transitionElapsed >= removal.At))
+            {
+                removal.Applied = true;
+                _preImpactPieces?.RemoveAll(piece => piece.Id == removal.PieceId);
+            }
             if (_transitionElapsed >= _impactTime)
             {
                 _preImpactTerrain = null;
@@ -166,6 +179,7 @@ public sealed class Game1 : Game
                 _preImpactPieces = null;
                 _falls.Clear();
                 _terrainBreaks.Clear();
+                _pieceRemovals.Clear();
             }
         }
 
@@ -336,6 +350,7 @@ public sealed class Game1 : Game
     {
         _falls.Clear();
         _terrainBreaks.Clear();
+        _pieceRemovals.Clear();
         _preImpactTerrain = null;
         _preImpactMines = null;
         _preImpactClues = null;
@@ -509,6 +524,7 @@ public sealed class Game1 : Game
     {
         _falls.Clear();
         _terrainBreaks.Clear();
+        _pieceRemovals.Clear();
         _preImpactTerrain = terrainBefore;
         _preImpactMines = minesBefore;
         _preImpactClues = cluesBefore;
@@ -544,6 +560,7 @@ public sealed class Game1 : Game
         }
         _impactTime = Math.Max(.08f, _falls.Count == 0 ? .08f : _falls.Max(fall => fall.Delay + fall.Duration));
         var contactBreakCounts = new Dictionary<(int?, Int3), int>();
+        var contactTimes = new Dictionary<(int?, Int3), float>();
         foreach (var terrainBreak in _model.LastTerrainChanges)
         {
             var candidates = _falls.Where(animation => animation.Fall.PieceId == terrainBreak.PieceId).ToList();
@@ -552,11 +569,28 @@ public sealed class Game1 : Game
             var key = (terrainBreak.PieceId, terrainBreak.Contact);
             var stagger = contactBreakCounts.GetValueOrDefault(key) * .045f;
             contactBreakCounts[key] = contactBreakCounts.GetValueOrDefault(key) + 1;
-            var at = (contact is not null ? contact.Delay + contact.Duration * .9f :
-                terrainBreak.PieceId == movingId ? Math.Max(.04f, moveDuration * .9f) : _impactTime) + stagger;
+            var contactAt = contact is not null ? contact.Delay + contact.Duration * .9f :
+                terrainBreak.PieceId == movingId ? Math.Max(.04f, moveDuration * .9f) : _impactTime;
+            contactTimes.TryAdd(key, contactAt);
+            var at = contactAt + stagger;
             _terrainBreaks.Add(new TerrainBreakVisual { Cell = terrainBreak.Cell, Solid = terrainBreak.Solid, At = at });
         }
+        foreach (var removal in _model.LastPieceRemovals)
+        {
+            var key = (removal.SourcePieceId, removal.Contact);
+            var at = contactTimes.GetValueOrDefault(key);
+            if (at <= 0)
+            {
+                var candidates = _falls.Where(animation => animation.Fall.PieceId == removal.SourcePieceId).ToList();
+                var contact = candidates.FirstOrDefault(animation => animation.Fall.To == removal.Contact) ??
+                    candidates.FirstOrDefault(animation => animation.Fall.To.Z <= removal.Contact.Z + 1) ?? candidates.LastOrDefault();
+                at = contact is not null ? contact.Delay + contact.Duration * .9f :
+                    removal.SourcePieceId == movingId ? Math.Max(.04f, moveDuration * .9f) : _impactTime;
+            }
+            _pieceRemovals.Add(new PieceRemovalVisual { PieceId = removal.PieceId, At = at });
+        }
         if (_terrainBreaks.Count > 0) _impactTime = Math.Max(_impactTime, _terrainBreaks.Max(change => change.At + .08f));
+        if (_pieceRemovals.Count > 0) _impactTime = Math.Max(_impactTime, _pieceRemovals.Max(removal => removal.At + .08f));
     }
 
     private FallVisual? ActiveFall(int pieceId)

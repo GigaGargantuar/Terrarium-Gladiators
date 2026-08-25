@@ -27,6 +27,7 @@ export class TerrariumModel {
     this.history = [];
     this.lastFalls = [];
     this.lastTerrainChanges = [];
+    this.lastPieceRemovals = [];
     this.minesweeperEnabled = minesweeperEnabled;
     if (initialize) this.reset();
   }
@@ -54,6 +55,7 @@ export class TerrariumModel {
     this.message = "White to move — select a piece, then a glowing cell.";
     this.lastFalls = [];
     this.lastTerrainChanges = [];
+    this.lastPieceRemovals = [];
     this.history = [];
   }
 
@@ -110,7 +112,7 @@ export class TerrariumModel {
     copy.enPassantTarget = this.enPassantTarget && { ...this.enPassantTarget };
     copy.pendingPromotionPieceId = this.pendingPromotionPieceId;
     copy.minesweeperEnabled = this.minesweeperEnabled;
-    copy.nextId = this.nextId; copy.history = []; copy.lastFalls = [];copy.lastTerrainChanges=[];
+    copy.nextId = this.nextId; copy.history = []; copy.lastFalls = [];copy.lastTerrainChanges=[];copy.lastPieceRemovals=[];
     return copy;
   }
 
@@ -195,11 +197,9 @@ export class TerrariumModel {
 
   addWallPawnMoves(piece, result, forward) {
     const wallLatched = this.isWallLatched(piece.position);
-    if (wallLatched) {
-      const oneUp = add(piece.position, v(0,0,1));
-      if (this.isEmpty(oneUp)) { result.push(oneUp); const twoUp = add(piece.position,v(0,0,2)); if (!piece.hasMoved && this.isEmpty(twoUp)) result.push(twoUp); }
-      else if (this.isSolid(oneUp)) result.push(oneUp);
-    }
+    const oneUp = add(piece.position, v(0,0,1));
+    if (this.isEmpty(oneUp)) { result.push(oneUp); const twoUp = add(piece.position,v(0,0,2)); if (!piece.hasMoved && this.isEmpty(twoUp)) result.push(twoUp); }
+    else if (wallLatched && this.isSolid(oneUp)) result.push(oneUp);
     if (this.plane !== Plane.YZ) return;
     for (const dz of [-1,1]) {
       const target = add(add(piece.position, forward), v(0,0,dz));
@@ -260,7 +260,7 @@ export class TerrariumModel {
   addStepping(piece,result,offsets){for(const offset of offsets){const target=add(piece.position,offset);if(!TerrariumModel.isInside(target))continue;if(this.isSolid(target)){if(this.canExcavate(piece,target))result.push(target);continue;}const occupant=this.pieceAt(target);if(!occupant||occupant.side!==piece.side)result.push(target);}}
 
   tryMove(target) {
-    this.lastFalls=[];this.lastTerrainChanges=[]; const piece=this.selected;
+    this.lastFalls=[];this.lastTerrainChanges=[];this.lastPieceRemovals=[]; const piece=this.selected;
     if(!piece||!this.legalMoves(piece).some(p=>eq(p,target))){this.message="That cell is not reachable on the current plane.";return false;}
     this.pushHistory(); const from={...piece.position},events=[],excavating=this.isSolid(target);let destination={...target};
     const previousPawn=this.enPassantPawnId,previousTarget=this.enPassantTarget;this.enPassantPawnId=null;this.enPassantTarget=null;
@@ -286,9 +286,9 @@ export class TerrariumModel {
   onEnemyBackRank(piece){return piece.side===Side.WHITE?piece.position.y===7:piece.position.y===0}
   promote(kind){if(![Kind.QUEEN,Kind.ROOK,Kind.BISHOP,Kind.KNIGHT,Kind.TRISHOP].includes(kind)||this.pendingPromotionPieceId==null)return false;const pawn=this.pieces.find(p=>p.id===this.pendingPromotionPieceId&&p.kind===Kind.PAWN);if(!pawn)return false;pawn.kind=kind;pawn.promoted=true;this.pendingPromotionPieceId=null;this.message=`${pawn.side} Pawn promoted to ${kind} with true-3D movement.`;if(!this.winner)this.turn=other(this.turn);return true;}
 
-  removeTerrain(p,events,pieceId=null,contact=p){if(!this.isSolid(p))return false;this.setSolid(p.x,p.y,p.z,false);this.lastTerrainChanges?.push({cell:{...p},solid:false,pieceId,contact:{...contact}});this.disturbedTerrain?.add(key(p));this.revealedClues?.add(key(p));if(this.mineAt(p.x,p.y,p.z))this.detonateMine(p,events);return true}
-  detonateMine(p,events){this.mines[this.solidIndex(p.x,p.y,p.z)]=0;let casualties=0;
-    for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)for(let dz=-1;dz<=1;dz++){const blast=add(p,v(dx,dy,dz));this.revealedClues?.add(key(blast));for(const victim of [...this.pieces])if(eq(victim.position,blast)){this.destroyPiece(victim,`${victim.kind} was caught in a mine blast.`);casualties++}}
+  removeTerrain(p,events,pieceId=null,contact=p){if(!this.isSolid(p))return false;this.setSolid(p.x,p.y,p.z,false);this.lastTerrainChanges?.push({cell:{...p},solid:false,pieceId,contact:{...contact}});this.disturbedTerrain?.add(key(p));this.revealedClues?.add(key(p));if(this.mineAt(p.x,p.y,p.z))this.detonateMine(p,events,pieceId,contact);return true}
+  detonateMine(p,events,sourcePieceId=null,contact=p){this.mines[this.solidIndex(p.x,p.y,p.z)]=0;let casualties=0;
+    for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)for(let dz=-1;dz<=1;dz++){const blast=add(p,v(dx,dy,dz));this.revealedClues?.add(key(blast));for(const victim of [...this.pieces])if(eq(victim.position,blast)){this.lastPieceRemovals?.push({pieceId:victim.id,sourcePieceId,contact:{...contact}});this.destroyPiece(victim,`${victim.kind} was caught in a mine blast.`);casualties++}}
     events.push(`Mine detonated at ${TerrariumModel.cellName(p)}: ${casualties} piece(s) hit; terrain outside the dent was untouched.`)
   }
 
@@ -308,7 +308,7 @@ export class TerrariumModel {
             if(supportZ>=0&&this.solidAt(x,y,supportZ)){const contact=v(x,y,supportZ),mineContact=this.mineAt(contact.x,contact.y,contact.z);this.removeTerrain(contact,events,bottom.id,contact);environmentPieceId=bottom.id;environmentContact=contact;events.push(`Impact shattered cube ${TerrariumModel.cellName(contact)}!`);
               if(mineContact){tower.forEach((member,index)=>{const from={...member.position},at=v(x,y,Math.min(15,contact.z+index));this.lastFalls.push({pieceId:member.id,side:member.side,kind:member.kind,from,to:at,perished:index<=1});if(index<=1)this.destroyPiece(member,`${member.kind} was destroyed by a mine during its fall.`);else member.position=at;});events.push(`The falling projectile struck a mine at ${TerrariumModel.cellName(contact)} and stopped at the blast.`);changed=true;break outer;}
             }
-            else if(impactPiece){const stationary=[];for(let scan=supportZ;scan>=0;scan--){const member=this.pieceAt(v(x,y,scan));if(!member)break;stationary.unshift(member);}const crushed=stationary.shift();this.destroyPiece(crushed,`The bottom ${crushed.kind} was squashed beneath its tower!`);events.push(`${crushed.side} ${crushed.kind} at the tower base was squashed!`);const crater=this.excavateCraterBelow(x,y,crushed.position.z-1,events,bottom.id),settled=crater>=0?crater:crushed.position.z;if(crater>=0){environmentPieceId=bottom.id;environmentContact=v(x,y,crater);events.push(`The squashed piece left a crater at ${TerrariumModel.cellName(environmentContact)}!`)}stationary.forEach((member,i)=>{const from={...member.position};member.position=v(x,y,Math.min(15,settled+i));if(!eq(from,member.position))this.lastFalls.push({pieceId:member.id,side:member.side,kind:member.kind,from,to:{...member.position},perished:false});});impactBaseZ=settled+stationary.length;}
+            else if(impactPiece){const stationary=[];for(let scan=supportZ;scan>=0;scan--){const member=this.pieceAt(v(x,y,scan));if(!member)break;stationary.unshift(member);}const crushed=stationary.shift();this.lastPieceRemovals.push({pieceId:crushed.id,sourcePieceId:bottom.id,contact:{...impactPiece.position}});this.destroyPiece(crushed,`The bottom ${crushed.kind} was squashed beneath its tower!`);events.push(`${crushed.side} ${crushed.kind} at the tower base was squashed!`);const crater=this.excavateCraterBelow(x,y,crushed.position.z-1,events,bottom.id),settled=crater>=0?crater:crushed.position.z;if(crater>=0){environmentPieceId=bottom.id;environmentContact=v(x,y,crater);events.push(`The squashed piece left a crater at ${TerrariumModel.cellName(environmentContact)}!`)}stationary.forEach((member,i)=>{const from={...member.position};member.position=v(x,y,Math.min(15,settled+i));if(!eq(from,member.position))this.lastFalls.push({pieceId:member.id,side:member.side,kind:member.kind,from,to:{...member.position},perished:false});});impactBaseZ=settled+stationary.length;}
             let baseZ=impactBaseZ;if(!pieceBrokeFall&&(tower.length>1||fall>=4)){const casualty=tower.shift();this.lastFalls.push({pieceId:casualty.id,side:casualty.side,kind:casualty.kind,from:{...casualty.position},to:v(x,y,baseZ),perished:true});this.destroyPiece(casualty,`${casualty.kind} perished in a ${fall}-cell fall.`);events.push(tower.length?"The tower's bottom piece perished.":`The falling piece perished after ${fall} cells.`);}
             tower.forEach((member,i)=>{const from={...member.position};member.position=v(x,y,Math.min(15,baseZ+i));this.lastFalls.push({pieceId:member.id,side:member.side,kind:member.kind,from,to:{...member.position},perished:false});});
           }
@@ -319,7 +319,7 @@ export class TerrariumModel {
     }
   }
 
-  resolveTerrainGravity(events,pieceId=null,contact=null){for(let z=1;z<16;z++)for(let x=1;x<7;x++)for(let y=1;y<7;y++){let flat=true,supported=false;for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){flat=flat&&this.solidAt(x+dx,y+dy,z);supported=supported||this.solidAt(x+dx,y+dy,z-1);}if(!flat||supported)continue;const center=v(x,y,z),eventContact=contact??center,protectedCavern=this.cavernProtected?.has(key(center)),nearDisturbance=[...(this.disturbedTerrain??[])].some(encoded=>{const[a,b,c]=encoded.split(",").map(Number);return Math.max(Math.abs(a-x),Math.abs(b-y),Math.abs(c-z))<=1});if(protectedCavern&&!nearDisturbance)continue;this.removeTerrain(center,events,pieceId,eventContact);let hitZ=-1,hitPiece=null;for(let scan=z-1;scan>=0;scan--){hitPiece=this.pieceAt(v(x,y,scan));if(hitPiece||this.solidAt(x,y,scan)){hitZ=scan;break;}}let landingZ;if(hitPiece){this.destroyPiece(hitPiece,`${hitPiece.kind} was squashed by a falling cube cell.`);events.push(`Falling terrain squashed ${hitPiece.side} ${hitPiece.kind}!`);const crater=this.excavateCraterBelow(x,y,hitZ-1,events,pieceId);landingZ=crater>=0?crater:hitZ;if(crater>=0)events.push(`The crushed piece left a crater at ${TerrariumModel.cellName(v(x,y,crater))}!`);}else landingZ=Math.max(0,hitZ+1);this.setSolid(x,y,landingZ,true);this.lastTerrainChanges?.push({cell:v(x,y,landingZ),solid:true,pieceId,contact:{...eventContact}});events.push(`Unsupported 3×3 shelf collapsed: center cube fell ${z-landingZ} cell(s).`);return true;}return false;}
+  resolveTerrainGravity(events,pieceId=null,contact=null){for(let z=1;z<16;z++)for(let x=1;x<7;x++)for(let y=1;y<7;y++){let flat=true,supported=false;for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++){flat=flat&&this.solidAt(x+dx,y+dy,z);supported=supported||this.solidAt(x+dx,y+dy,z-1);}if(!flat||supported)continue;const center=v(x,y,z),eventContact=contact??center,protectedCavern=this.cavernProtected?.has(key(center)),nearDisturbance=[...(this.disturbedTerrain??[])].some(encoded=>{const[a,b,c]=encoded.split(",").map(Number);return Math.max(Math.abs(a-x),Math.abs(b-y),Math.abs(c-z))<=1});if(protectedCavern&&!nearDisturbance)continue;this.removeTerrain(center,events,pieceId,eventContact);let hitZ=-1,hitPiece=null;for(let scan=z-1;scan>=0;scan--){hitPiece=this.pieceAt(v(x,y,scan));if(hitPiece||this.solidAt(x,y,scan)){hitZ=scan;break;}}let landingZ;if(hitPiece){this.lastPieceRemovals.push({pieceId:hitPiece.id,sourcePieceId:pieceId,contact:{...eventContact}});this.destroyPiece(hitPiece,`${hitPiece.kind} was squashed by a falling cube cell.`);events.push(`Falling terrain squashed ${hitPiece.side} ${hitPiece.kind}!`);const crater=this.excavateCraterBelow(x,y,hitZ-1,events,pieceId);landingZ=crater>=0?crater:hitZ;if(crater>=0)events.push(`The crushed piece left a crater at ${TerrariumModel.cellName(v(x,y,crater))}!`);}else landingZ=Math.max(0,hitZ+1);this.setSolid(x,y,landingZ,true);this.lastTerrainChanges?.push({cell:v(x,y,landingZ),solid:true,pieceId,contact:{...eventContact}});events.push(`Unsupported 3×3 shelf collapsed: center cube fell ${z-landingZ} cell(s).`);return true;}return false;}
   excavateCraterBelow(x,y,startZ,events=[],pieceId=null){for(let z=startZ;z>=0;z--)if(this.solidAt(x,y,z)){this.removeTerrain(v(x,y,z),events,pieceId);return z;}return -1;}
   hasSupport(p,releasedPawnId=null){if(p.z<=0)return true;const below={...p,z:p.z-1},piece=this.pieceAt(p);return this.isSolid(below)||!!this.pieceAt(below)||(piece?.kind===Kind.PAWN&&piece.id!==releasedPawnId&&this.isWallLatched(p));}
   canPawnRest(p){if(!TerrariumModel.isInside(p))return false;if(p.z===0)return true;const below={...p,z:p.z-1};return this.isSolid(below)||!!this.pieceAt(below)||this.isWallLatched(p);}
@@ -328,7 +328,7 @@ export class TerrariumModel {
   destroyPiece(piece,reason){this.pieces=this.pieces.filter(p=>p!==piece);if(piece.kind===Kind.KING){this.winner=other(piece.side);this.message=`${reason}  ${this.winner} wins!`;}}
 
   pushHistory(){this.history.push({solids:this.solids.slice(),mines:this.mines?.slice(),revealedClues:[...(this.revealedClues??[])],cavernProtected:[...(this.cavernProtected??[])],disturbedTerrain:[...(this.disturbedTerrain??[])],pieces:this.pieces.map(clonePiece),turn:this.turn,plane:this.plane,winner:this.winner,message:this.message,selectedId:this.selectedId,enPassantPawnId:this.enPassantPawnId,enPassantTarget:this.enPassantTarget&&{...this.enPassantTarget},pendingPromotionPieceId:this.pendingPromotionPieceId});}
-  undo(){const s=this.history.pop();if(!s)return false;this.solids=s.solids.slice();this.mines=s.mines?.slice()??new Uint8Array(8*8*16);this.revealedClues=new Set(s.revealedClues??[]);this.cavernProtected=new Set(s.cavernProtected??[]);this.disturbedTerrain=new Set(s.disturbedTerrain??[]);this.pieces=s.pieces.map(clonePiece);this.turn=s.turn;this.plane=s.plane;this.winner=s.winner;this.message="Move undone.";this.selectedId=s.selectedId;this.enPassantPawnId=s.enPassantPawnId;this.enPassantTarget=s.enPassantTarget&&{...s.enPassantTarget};this.pendingPromotionPieceId=s.pendingPromotionPieceId;this.lastFalls=[];this.lastTerrainChanges=[];return true;}
+  undo(){const s=this.history.pop();if(!s)return false;this.solids=s.solids.slice();this.mines=s.mines?.slice()??new Uint8Array(8*8*16);this.revealedClues=new Set(s.revealedClues??[]);this.cavernProtected=new Set(s.cavernProtected??[]);this.disturbedTerrain=new Set(s.disturbedTerrain??[]);this.pieces=s.pieces.map(clonePiece);this.turn=s.turn;this.plane=s.plane;this.winner=s.winner;this.message="Move undone.";this.selectedId=s.selectedId;this.enPassantPawnId=s.enPassantPawnId;this.enPassantTarget=s.enPassantTarget&&{...s.enPassantTarget};this.pendingPromotionPieceId=s.pendingPromotionPieceId;this.lastFalls=[];this.lastTerrainChanges=[];this.lastPieceRemovals=[];return true;}
   surfaceZ(x,y){for(let z=15;z>=0;z--)if(this.solidAt(x,y,z))return z;return -1;}
   predictedFall(p){if(!TerrariumModel.isInside(p))return 0;const support=this.findSupportZ(p.x,p.y,p.z-1,this.selectedId);return Math.max(0,p.z-(support+1));}
   predictOutcome(target){if(this.isExcavationTarget(target))return Outcome.EXCAVATION;const moving=this.selected,releases=moving?.kind===Kind.PAWN&&this.plane!==Plane.XY&&target.x===moving.position.x&&target.y===moving.position.y&&target.z>moving.position.z;if(moving?.kind===Kind.PAWN&&!releases&&this.canPawnRest(target))return Outcome.SAFE;const support=this.findSupportZ(target.x,target.y,target.z-1,this.selectedId),fall=Math.max(0,target.z-(support+1));if(fall<2)return Outcome.SAFE;const impact=support>=0?this.pieceAt(v(target.x,target.y,support)):null,pieceBreaks=impact&&impact.id!==this.selectedId,movingTower=moving&&this.planTowerTransport(moving,target).members.some(m=>eq(m.destination,add(target,v(0,0,1))));return !pieceBreaks&&(movingTower||fall>=4)?Outcome.FATAL:Outcome.CRATER;}

@@ -101,6 +101,20 @@ test("a wall-latched pawn can hop upward and settle back safely", () => {
   assert.ok(game.lastFalls.some(fall => fall.pieceId===1 && fall.from.z===6 && fall.to.z===5));
 });
 
+test("XZ and YZ pawn hops do not require a wall latch", () => {
+  const pawn=tacticalPiece(1,Side.WHITE,Kind.PAWN,3,3,4);pawn.hasMoved=false;
+  const game=tacticalPosition([pawn],Side.WHITE);
+  for(const plane of [Plane.XZ,Plane.YZ]){
+    game.plane=plane;const moves=game.legalMoves(game.pieces[0]);
+    assert.ok(moves.some(move=>move.x===3&&move.y===3&&move.z===5));
+    assert.ok(moves.some(move=>move.x===3&&move.y===3&&move.z===6));
+  }
+  game.pieces[0].hasMoved=true;game.plane=Plane.XZ;
+  const movedPawnMoves=game.legalMoves(game.pieces[0]);
+  assert.ok(movedPawnMoves.some(move=>move.z===5));
+  assert.equal(movedPawnMoves.some(move=>move.z===6),false);
+});
+
 test("moving the bottom piece carries its contiguous tower", () => {
   const game = new TerrariumModel(false);
   game.solids = new Uint8Array(8 * 8 * 16);
@@ -348,6 +362,20 @@ test("a falling projectile is destroyed at a mine contact and cannot continue", 
   ]),[[10,7,true]]);
   assert.equal(game.solidAt(3,3,3),true,"the destroyed projectile must not reach the next support");
   assert.match(events.join(" "),/stopped at the blast/);
+});
+
+test("squashed pieces emit an impact-timed removal event", () => {
+  const game=tacticalPosition([
+    tacticalPiece(1,Side.WHITE,Kind.ROOK,3,3,5),
+    tacticalPiece(2,Side.BLACK,Kind.KNIGHT,3,3,2),
+  ],Side.WHITE);
+  game.setSolid(3,3,1,true);const events=[];game.resolveGravity(events);
+
+  assert.equal(game.pieces.some(piece=>piece.id===2),false);
+  assert.deepEqual(game.lastPieceRemovals,[{
+    pieceId:2,sourcePieceId:1,contact:{x:3,y:3,z:2},
+  }]);
+  assert.match(events.join(" "),/squashed/);
 });
 
 test("a fall that punches through terrain resets damage at every destroyed cell", () => {

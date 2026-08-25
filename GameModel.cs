@@ -34,6 +34,7 @@ public sealed class ChessPiece
 public sealed record PieceFallEvent(int PieceId, Side Side, PieceKind Kind, Int3 From, Int3 To,
     bool Perished, bool StartsWithMove = false);
 public sealed record TerrainChangeEvent(Int3 Cell, bool Solid, int? PieceId, Int3 Contact);
+public sealed record PieceRemovalEvent(int PieceId, int? SourcePieceId, Int3 Contact);
 
 public sealed class TerrariumModel
 {
@@ -60,6 +61,7 @@ public sealed class TerrariumModel
     public int? SelectedId { get; private set; }
     public List<PieceFallEvent> LastFalls { get; } = new();
     public List<TerrainChangeEvent> LastTerrainChanges { get; } = new();
+    public List<PieceRemovalEvent> LastPieceRemovals { get; } = new();
     public int? PendingPromotionPieceId { get; private set; }
     private int? EnPassantPawnId { get; set; }
     private Int3? EnPassantTarget { get; set; }
@@ -117,6 +119,7 @@ public sealed class TerrariumModel
         Message = "White to move — select a piece, then a glowing cell.";
         LastFalls.Clear();
         LastTerrainChanges.Clear();
+        LastPieceRemovals.Clear();
         _history.Clear();
     }
 
@@ -368,27 +371,20 @@ public sealed class TerrariumModel
 
     private void AddWallPawnMoves(ChessPiece piece, List<Int3> result, Int3 forward)
     {
-        // Rotating a pawn into XZ/YZ is a wall action, not an alternate way to
-        // walk across a horizontal board. Hops and empty climbs require a wall
-        // latch, but an enemy on a YZ diagonal may always be captured.
+        // Straight vertical hops are intrinsic XZ/YZ pawn moves and never need
+        // a wall. Plane-specific climbs and upward excavation still use a latch.
         var wallLatched = IsWallLatched(piece.Position);
-        if (wallLatched)
+        var oneUp = piece.Position + new Int3(0, 0, 1);
+        if (IsEmpty(oneUp))
         {
-            var oneUp = piece.Position + new Int3(0, 0, 1);
-            if (IsEmpty(oneUp))
-            {
-                // A straight vertical hop deliberately releases the wall latch.
-                // One cell consumes the turn safely; an initial two-cell hop drops
-                // hard enough to create a crater when gravity resolves.
-                result.Add(oneUp);
-                var twoUp = piece.Position + new Int3(0, 0, 2);
-                if (!piece.HasMoved && IsEmpty(twoUp)) result.Add(twoUp);
-            }
-            else if (IsSolid(oneUp))
-            {
-                // Pawns are the only pieces allowed to excavate directly upward.
-                result.Add(oneUp);
-            }
+            result.Add(oneUp);
+            var twoUp = piece.Position + new Int3(0, 0, 2);
+            if (!piece.HasMoved && IsEmpty(twoUp)) result.Add(twoUp);
+        }
+        else if (wallLatched && IsSolid(oneUp))
+        {
+            // Pawns are the only pieces allowed to excavate directly upward.
+            result.Add(oneUp);
         }
 
         if (Plane != MovementPlane.YZ) return;
@@ -577,6 +573,7 @@ public sealed class TerrariumModel
     {
         LastFalls.Clear();
         LastTerrainChanges.Clear();
+        LastPieceRemovals.Clear();
         var piece = Selected;
         if (piece is null || !LegalMoves(piece).Contains(target))
         {
@@ -717,11 +714,11 @@ public sealed class TerrariumModel
     {
         if (!IsSolid(p)) return false;
         Solids[p.X, p.Y, p.Z] = false; LastTerrainChanges.Add(new TerrainChangeEvent(p, false, pieceId, contact ?? p)); DisturbedTerrain.Add(p); RevealedClues.Add(p);
-        if (IsMine(p)) DetonateMine(p, events);
+        if (IsMine(p)) DetonateMine(p, events, pieceId, contact ?? p);
         return true;
     }
 
-    private void DetonateMine(Int3 p, List<string> events)
+    private void DetonateMine(Int3 p, List<string> events, int? sourcePieceId, Int3 contact)
     {
         Mines[p.X, p.Y, p.Z] = false; var casualties = 0;
         for (var dx = -1; dx <= 1; dx++) for (var dy = -1; dy <= 1; dy++) for (var dz = -1; dz <= 1; dz++)
@@ -729,6 +726,7 @@ public sealed class TerrariumModel
             var blast = p + new Int3(dx, dy, dz); RevealedClues.Add(blast);
             foreach (var victim in Pieces.Where(piece => piece.Position == blast).ToList())
             {
+                LastPieceRemovals.Add(new PieceRemovalEvent(victim.Id, sourcePieceId, contact));
                 DestroyPiece(victim, $"{victim.Kind} was caught in a mine blast."); casualties++;
             }
         }
@@ -828,6 +826,7 @@ public sealed class TerrariumModel
 
                             var crushedBottom = stationaryTower[0];
                             stationaryTower.RemoveAt(0);
+                            LastPieceRemovals.Add(new PieceRemovalEvent(crushedBottom.Id, bottom.Id, impactPiece.Position));
                             DestroyPiece(crushedBottom, $"The bottom {crushedBottom.Kind} was squashed beneath its tower!");
                             events.Add($"{crushedBottom.Side} {crushedBottom.Kind} at the tower base was squashed!");
                             var craterZ = ExcavateCraterBelow(x, y, crushedBottom.Position.Z - 1, events, bottom.Id);
@@ -926,6 +925,7 @@ public sealed class TerrariumModel
             int landingZ;
             if (hitPiece is not null)
             {
+                LastPieceRemovals.Add(new PieceRemovalEvent(hitPiece.Id, pieceId, contact ?? center));
                 DestroyPiece(hitPiece, $"{hitPiece.Kind} was squashed by a falling cube cell.");
                 events.Add($"Falling terrain squashed {hitPiece.Side} {hitPiece.Kind}!");
                 var craterZ = ExcavateCraterBelow(x, y, hitZ - 1, events, pieceId);
@@ -1024,6 +1024,7 @@ public sealed class TerrariumModel
         PendingPromotionPieceId = snapshot.PendingPromotionPieceId;
         LastFalls.Clear();
         LastTerrainChanges.Clear();
+        LastPieceRemovals.Clear();
         return true;
     }
 

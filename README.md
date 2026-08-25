@@ -86,14 +86,11 @@ piece will break it; otherwise it is red.
 
 - Standard pieces begin in the standard chess arrangement.
 - Rook, Bishop, Queen, King, and Knight movement rotates into the chosen plane.
-- Pawns move normally on XY. XZ and YZ are wall actions and are available only
-  while a pawn is latched beside solid terrain. On YZ, a pawn advances one rank
-  while climbing or descending one Z cell, and may capture an enemy on either
-  of those diagonals. Empty climb destinations must remain latched or supported.
-- A wall-latched pawn may hop straight up one cell on XZ or YZ to consume its
-  turn, then settle safely. On its first move it may hop two cells instead; the
-  resulting two-cell drop creates a crater. It may also excavate solid terrain
-  directly above itself without moving.
+- Pawns move normally on XY. On either XZ or YZ, every pawn may hop straight up
+  one cell without a wall latch; an unmoved pawn may hop two cells. On YZ, a
+  wall-latched pawn can also advance one rank while climbing or descending one
+  Z cell and capture an enemy on either diagonal. Empty climb destinations must
+  remain latched or supported. Upward excavation still requires a wall latch.
 - En passant is available only on the immediate reply to a two-square pawn
   move and captures the passed pawn at its actual elevation.
 - An unmoved King and Rook may castle on XY when they remain aligned on their
