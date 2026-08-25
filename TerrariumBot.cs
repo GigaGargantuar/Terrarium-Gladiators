@@ -56,7 +56,7 @@ public sealed class TerrariumBot
             .WithDegreeOfParallelism(Math.Max(1, Environment.ProcessorCount))
             .Select(branch =>
             {
-                var reply = EvaluateOpponentReplies(branch.Position, botSide, opponent);
+                var reply = EvaluateOpponentReplies(root, branch.Position, botSide, opponent);
                 return new MoveAnalysis(branch.Move, reply.Score, reply.CanMateInOne);
             })
             .ToList();
@@ -78,11 +78,12 @@ public sealed class TerrariumBot
     }
 
     private static ReplyAnalysis EvaluateOpponentReplies(
-        TerrariumModel position, Side botSide, Side opponent)
+        TerrariumModel root, TerrariumModel position, Side botSide, Side opponent)
     {
         var replies = GenerateMoves(position, opponent);
         if (replies.Count == 0)
-            return new ReplyAnalysis(Evaluate(position, botSide), false);
+            return new ReplyAnalysis(
+                Evaluate(position, botSide) - PreservationPenalty(root, position, botSide), false);
 
         var worstScore = int.MaxValue;
         var canMateInOne = false;
@@ -91,7 +92,11 @@ public sealed class TerrariumBot
             var afterReply = ApplyMove(position, reply);
             if (afterReply is null) continue;
 
-            var score = Evaluate(afterReply, botSide);
+            // Material lost beyond what the opponent lost is penalized again.
+            // This makes the bot actively rescue attacked pieces and decline
+            // exchanges where it gives up the more valuable side of the trade.
+            var score = Evaluate(afterReply, botSide) -
+                        PreservationPenalty(root, afterReply, botSide);
             if (afterReply.Winner == opponent)
             {
                 canMateInOne = true;
@@ -101,9 +106,24 @@ public sealed class TerrariumBot
         }
 
         return new ReplyAnalysis(
-            worstScore == int.MaxValue ? Evaluate(position, botSide) : worstScore,
+            worstScore == int.MaxValue
+                ? Evaluate(position, botSide) - PreservationPenalty(root, position, botSide)
+                : worstScore,
             canMateInOne);
     }
+
+    private static int PreservationPenalty(
+        TerrariumModel root, TerrariumModel position, Side botSide)
+    {
+        var opponent = Other(botSide);
+        var ownLoss = Material(root, botSide) - Material(position, botSide);
+        var opponentLoss = Material(root, opponent) - Material(position, opponent);
+        return Math.Max(0, ownLoss - opponentLoss) * 3;
+    }
+
+    private static int Material(TerrariumModel position, Side side) =>
+        position.Pieces.Where(piece => piece.Side == side)
+            .Sum(piece => PieceValues[piece.Kind]);
 
     private static int Evaluate(TerrariumModel position, Side botSide)
     {

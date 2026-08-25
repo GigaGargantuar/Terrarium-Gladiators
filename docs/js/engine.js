@@ -252,6 +252,8 @@ export class TerrariumModel {
 }
 
 const pieceValues = {[Kind.PAWN]:100,[Kind.KNIGHT]:320,[Kind.BISHOP]:330,[Kind.ROOK]:500,[Kind.QUEEN]:900,[Kind.KING]:20000};
+function material(position,side){return position.pieces.filter(p=>p.side===side).reduce((sum,p)=>sum+pieceValues[p.kind],0);}
+function preservationPenalty(root,position,botSide){const opponent=other(botSide),ownLoss=material(root,botSide)-material(position,botSide),opponentLoss=material(root,opponent)-material(position,opponent);return Math.max(0,ownLoss-opponentLoss)*3;}
 function evaluate(position, botSide){if(position.winner===botSide)return 1e6;if(position.winner===other(botSide))return-1e6;return position.pieces.reduce((score,p)=>{const sign=p.side===botSide?1:-1,center=14-Math.abs(p.position.x*2-7)-Math.abs(p.position.y*2-7),adv=p.kind===Kind.PAWN?(p.side===Side.WHITE?p.position.y:7-p.position.y):0;return score+sign*(pieceValues[p.kind]+(p.kind===Kind.KING?center:center*2)+adv*6);},0);}
 function generateMoves(position,side){const moves=[];for(const plane of planes){position.plane=plane;for(const piece of position.pieces.filter(p=>p.side===side))for(const target of position.legalMoves(piece))moves.push({pieceId:piece.id,plane,target});}return moves;}
 function applyMove(position,move){const result=position.cloneForSimulation();result.plane=move.plane;if(!result.select(move.pieceId)||!result.tryMove(move.target))return null;if(result.pendingPromotionPieceId!=null)result.promote(Kind.QUEEN);return result;}
@@ -259,10 +261,10 @@ function applyMove(position,move){const result=position.cloneForSimulation();res
 export function chooseBotMove(position, replyLimit = 72){
   if(position.winner)return null;const root=position.cloneForSimulation(),botSide=root.turn,opponent=other(botSide),moves=generateMoves(root,botSide),analyses=[];
   for(const move of moves){const after=applyMove(root,move);if(!after)continue;if(after.winner===botSide)return move;let worst=Infinity,hasEvaluation=false,allowsMate=false;const replies=generateMoves(after,opponent),sampleStep=replies.length>replyLimit?Math.ceil(replies.length/replyLimit):1;
-    // Positional scoring stays sampled for browser performance, but every legal
-    // reply is simulated so a king capture or gravity-caused mate is never missed.
-    for(let i=0;i<replies.length;i++){const afterReply=applyMove(after,replies[i]);if(!afterReply)continue;if(afterReply.winner===opponent){allowsMate=true;worst=-1e6;break;}if(i%sampleStep===0){worst=Math.min(worst,evaluate(afterReply,botSide));hasEvaluation=true;}}
-    if(!allowsMate&&!hasEvaluation)worst=evaluate(after,botSide);analyses.push({move,score:worst,allowsMate});
+    // Every reply is simulated for king safety. Direct captures are also always
+    // scored, so reply sampling can never hide an exposed piece or bad trade.
+    for(let i=0;i<replies.length;i++){const reply=replies[i],victim=after.pieceAt(reply.target),directCapture=victim?.side===botSide||(after.enPassantTarget&&eq(after.enPassantTarget,reply.target)&&after.enPassantPawnId!=null),afterReply=applyMove(after,reply);if(!afterReply)continue;if(afterReply.winner===opponent){allowsMate=true;worst=-1e6;break;}if(directCapture||i%sampleStep===0){worst=Math.min(worst,evaluate(afterReply,botSide)-preservationPenalty(root,afterReply,botSide));hasEvaluation=true;}}
+    if(!allowsMate&&!hasEvaluation)worst=evaluate(after,botSide)-preservationPenalty(root,after,botSide);analyses.push({move,score:worst,allowsMate});
   }
   if(!analyses.length)return null;const safe=analyses.filter(analysis=>!analysis.allowsMate),candidates=safe.length?safe:analyses;let best=candidates[0];for(const candidate of candidates)if(candidate.score>best.score)best=candidate;return best.move;
 }

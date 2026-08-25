@@ -48,9 +48,12 @@ dotnet run
 ```
 
 Click a piece, choose its movement plane, then click a highlighted destination.
-You play White; Black is controlled by a bot that searches one reply deep,
-evaluates material and piece activity, takes mate in one, and avoids allowing an
-opponent mate in one whenever a safe move exists.
+Choose same-device PvP, Player vs Bot (White player), or Bot vs Bot from the
+mode selector. The bot searches one reply deep, evaluates material and piece
+activity, takes mate in one, and avoids allowing an opponent mate in one
+whenever a safe move exists. It always analyzes direct capture replies and
+strongly penalizes lines that lose more of its own material than they take, so
+it rescues threatened pieces and declines unfavorable trades.
 The desktop window is freely resizable; the game preserves its aspect ratio and
 keeps mouse picking aligned at every size.
 The game starts in borderless fullscreen at the desktop's current resolution.

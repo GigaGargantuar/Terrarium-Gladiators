@@ -26,6 +26,15 @@
       </header>
       <p id="camera-readout" class="camera-readout">TRUE 3D / 45° / CAM Z 20.4</p>
 
+      <section class="mode-picker">
+        <h2>PLAY MODE</h2>
+        <select id="mode-select" aria-label="Play mode">
+          <option value="pvp">SAME-DEVICE PVP</option>
+          <option value="pvbot" selected>PLAYER VS BOT</option>
+          <option value="botvbot">BOT VS BOT</option>
+        </select>
+      </section>
+
       <section class="turn-block">
         <h1 id="turn-label">WHITE TO MOVE</h1>
         <p id="selected-piece">No piece selected</p>
@@ -65,7 +74,7 @@
         <button id="undo-button">U&nbsp;&nbsp;UNDO</button>
         <button id="restart-button">R&nbsp;&nbsp;RESTART</button>
       </div>
-      <p class="role-note">You are White&nbsp;&nbsp;·&nbsp;&nbsp;Black is the bot</p>
+      <p id="role-note" class="role-note">You are White&nbsp;&nbsp;·&nbsp;&nbsp;Black is the bot</p>
       <p class="deselect-note">Right-click to deselect</p>
     </aside>
   </main>

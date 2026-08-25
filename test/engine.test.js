@@ -2,6 +2,20 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { TerrariumModel, Side, Kind, Plane, chooseBotMove } from "../docs/js/engine.js";
 
+const tacticalPiece = (id, side, kind, x, y, z = 0) =>
+  ({ id, side, kind, position:{ x, y, z }, hasMoved:true });
+
+function tacticalPosition(pieces, turn = Side.BLACK) {
+  const game = new TerrariumModel(false);
+  game.solids = new Uint8Array(8 * 8 * 16);
+  game.pieces = pieces;
+  game.turn = turn; game.plane = Plane.XY; game.winner = null;
+  game.selectedId = null; game.enPassantPawnId = null; game.enPassantTarget = null;
+  game.pendingPromotionPieceId = null; game.nextId = 100;
+  game.history = []; game.lastFalls = []; game.message = "";
+  return game;
+}
+
 test("creates the desktop game's starting position", () => {
   const game = new TerrariumModel();
   assert.equal(game.pieces.length, 32);
@@ -155,4 +169,31 @@ test("bot checks every opponent reply for mate even when evaluation is sampled",
       }
     }
   }
+});
+
+test("bot preserves a threatened queen instead of accepting an unfavorable trade", () => {
+  const game = tacticalPosition([
+    tacticalPiece(1, Side.BLACK, Kind.KING, 7, 7),
+    tacticalPiece(2, Side.WHITE, Kind.KING, 7, 0),
+    tacticalPiece(3, Side.BLACK, Kind.QUEEN, 3, 3),
+    tacticalPiece(4, Side.WHITE, Kind.ROOK, 2, 0),
+    tacticalPiece(5, Side.WHITE, Kind.PAWN, 2, 2),
+  ]);
+
+  // The pawn attacks the queen and is protected by the rook. Direct captures
+  // must be checked even with the smallest browser reply-sampling budget.
+  const move = chooseBotMove(game, 1);
+  assert.equal(move?.pieceId, 3);
+  assert.notDeepEqual(move?.target, { x:2, y:2, z:0 });
+});
+
+test("bot move selection supports White for Bot vs Bot mode", () => {
+  const game = tacticalPosition([
+    tacticalPiece(1, Side.WHITE, Kind.KING, 7, 0),
+    tacticalPiece(2, Side.BLACK, Kind.KING, 7, 7),
+    tacticalPiece(3, Side.WHITE, Kind.ROOK, 0, 0),
+    tacticalPiece(4, Side.BLACK, Kind.PAWN, 0, 3),
+  ], Side.WHITE);
+
+  assert.ok(chooseBotMove(game, 4));
 });

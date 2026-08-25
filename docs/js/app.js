@@ -2,23 +2,27 @@ import { TerrariumModel, Side, Kind, Plane } from "./engine.js";
 import { WorldRenderer } from "./webgl-renderer.js";
 
 const model=new TerrariumModel(),canvas=document.querySelector("#board"),renderer=new WorldRenderer(canvas);
-const ui={turn:document.querySelector("#turn-label"),message:document.querySelector("#message"),selected:document.querySelector("#selected-piece"),planes:[...document.querySelectorAll("[data-plane]")],layer:document.querySelector("#layer-toggle"),depth:document.querySelector("#depth-slider"),depthOut:document.querySelector("#depth-output"),camera:document.querySelector("#camera-readout"),help:document.querySelector("#help-dialog"),promotion:document.querySelector("#promotion-dialog"),thinking:document.querySelector("#thinking")};
+const ui={turn:document.querySelector("#turn-label"),message:document.querySelector("#message"),selected:document.querySelector("#selected-piece"),planes:[...document.querySelectorAll("[data-plane]")],mode:document.querySelector("#mode-select"),role:document.querySelector("#role-note"),layer:document.querySelector("#layer-toggle"),depth:document.querySelector("#depth-slider"),depthOut:document.querySelector("#depth-output"),camera:document.querySelector("#camera-readout"),help:document.querySelector("#help-dialog"),promotion:document.querySelector("#promotion-dialog"),thinking:document.querySelector("#thinking")};
 let botWorker=null,botTimer=null,positionVersion=0,dirty=true,lastTime=performance.now(),pointerStart=null,pointerLast=null,dragging=false;
-let falls=[],preImpactSolids=null,preImpactPieces=null,impactTime=0,pendingBot=false;
+const MatchMode=Object.freeze({PVP:"pvp",PVBOT:"pvbot",BOTVBOT:"botvbot"});
+let matchMode=MatchMode.PVBOT,falls=[],preImpactSolids=null,preImpactPieces=null,impactTime=0,pendingBot=false;
 const clonePieces=pieces=>pieces.map(p=>({...p,position:{...p.position}}));
 const same=(a,b)=>a&&b&&a.x===b.x&&a.y===b.y&&a.z===b.z;
 const lerp=(a,b,t)=>a+(b-a)*t;
+const isBotTurn=()=>matchMode===MatchMode.BOTVBOT||(matchMode===MatchMode.PVBOT&&model.turn===Side.BLACK);
+const isHumanTurn=()=>!isBotTurn();
+const sideName=side=>side.toUpperCase();
 
 function startBotWorker(){
   botWorker?.terminate();botWorker=new Worker(new URL("./bot-worker.js",import.meta.url),{type:"module"});
   botWorker.addEventListener("message",event=>{
-    const {version,move}=event.data;if(version!==positionVersion||model.turn!==Side.BLACK)return;
-    if(!move){model.message="Black bot has no legal move.";ui.thinking.hidden=true;syncUI();return}
+    const {version,move}=event.data;if(version!==positionVersion||!isBotTurn())return;
+    if(!move){model.message=`${sideName(model.turn)} bot has no legal move.`;ui.thinking.hidden=true;syncUI();return}
     model.setPlane(move.plane);model.select(move.pieceId);const moving=model.selected,beforeSolids=model.solids.slice(),beforePieces=clonePieces(model.pieces),from={...moving.position};
-    if(model.tryMove(move.target)){if(model.pendingPromotionPieceId!=null)model.promote(Kind.QUEEN);startTransition(moving.id,from,beforeSolids,beforePieces)}
+    if(model.tryMove(move.target)){if(model.pendingPromotionPieceId!=null)model.promote(Kind.QUEEN);pendingBot=isBotTurn()&&!model.winner;startTransition(moving.id,from,beforeSolids,beforePieces)}
     ui.thinking.hidden=true;syncUI();
   });
-  botWorker.addEventListener("error",()=>{if(model.turn===Side.BLACK){model.message="Black bot search failed. Undo or restart to continue.";ui.thinking.hidden=true;syncUI()}});
+  botWorker.addEventListener("error",()=>{if(isBotTurn()){model.message=`${sideName(model.turn)} bot search failed. Undo or restart to continue.`;ui.thinking.hidden=true;syncUI()}});
 }
 startBotWorker();
 
@@ -47,15 +51,17 @@ function renderPieces(){
   if(preImpactPieces){const finalIds=new Set(model.pieces.map(p=>p.id)),animatedIds=new Set(falls.map(a=>a.fall.pieceId));for(const piece of preImpactPieces)if(!finalIds.has(piece.id)&&!animatedIds.has(piece.id))result.push({piece,position:{...piece.position},opacity:1})}
   return result;
 }
-function finishTransition(){preImpactSolids=null;preImpactPieces=null;falls=[];dirty=true;syncUI();if(pendingBot&&model.turn===Side.BLACK&&!model.winner&&model.pendingPromotionPieceId==null){pendingBot=false;queueBot()}}
+function finishTransition(){preImpactSolids=null;preImpactPieces=null;falls=[];dirty=true;syncUI();if(pendingBot&&isBotTurn()&&!model.winner&&model.pendingPromotionPieceId==null){pendingBot=false;queueBot()}}
 function updateTransition(dt){if(!transitionActive())return;for(const animation of falls)animation.elapsed+=dt;impactTime-=dt;if(impactTime<=0)finishTransition();dirty=true}
 
 function syncUI(){
-  const botThinking=!ui.thinking.hidden;ui.turn.textContent=model.winner?`${model.winner.toUpperCase()} WINS`:botThinking?"BLACK BOT THINKING":`${model.turn.toUpperCase()} TO MOVE`;ui.turn.classList.toggle("black",model.turn===Side.BLACK&&!model.winner);
+  const botThinking=!ui.thinking.hidden;ui.turn.textContent=model.winner?`${sideName(model.winner)} WINS`:botThinking?`${sideName(model.turn)} BOT THINKING`:`${sideName(model.turn)} TO MOVE`;ui.turn.classList.toggle("black",model.turn===Side.BLACK&&!model.winner);
   ui.message.textContent=model.message;const piece=model.selected;ui.selected.textContent=piece?`${piece.kind}  ·  ${TerrariumModel.cellName(piece.position)}`:"No piece selected";
+  ui.thinking.innerHTML=`<i></i> ${sideName(model.turn)} BOT THINKING`;
+  ui.role.textContent=matchMode===MatchMode.PVP?"Same-device PvP · pass control each turn":matchMode===MatchMode.BOTVBOT?"Bot vs Bot · spectator mode":"You are White · Black is the bot";
   for(const button of ui.planes)button.setAttribute("aria-checked",String(button.dataset.plane===model.plane));
   ui.camera.textContent=`TRUE 3D / ${Math.round(renderer.elevation).toString().padStart(2,"0")}° / CAM Z ${renderer.camera.z.toFixed(1).padStart(4,"0")}`;
-  if(model.pendingPromotionPieceId!=null&&!transitionActive()&&!ui.promotion.open)ui.promotion.showModal();dirty=true;
+  if(model.pendingPromotionPieceId!=null&&isHumanTurn()&&!transitionActive()&&!ui.promotion.open)ui.promotion.showModal();dirty=true;
 }
 function draw(){
   renderer.render(model,preImpactSolids??model.solids,renderPieces(),transitionActive()?[]:model.selected?model.legalMoves():[]);dirty=false;
@@ -63,20 +69,20 @@ function draw(){
 function frame(now){const dt=Math.min(.05,(now-lastTime)/1000);lastTime=now;updateTransition(dt);if(dirty)draw();requestAnimationFrame(frame)}
 requestAnimationFrame(frame);new ResizeObserver(()=>{dirty=true}).observe(canvas);
 
-function setPlane(plane){if(model.turn!==Side.WHITE||model.winner||model.pendingPromotionPieceId!=null||transitionActive())return;model.setPlane(plane);syncUI()}
-function cyclePiece(backward=false){if(model.turn!==Side.WHITE||transitionActive())return;const pieces=model.pieces.filter(p=>p.side===Side.WHITE).sort((a,b)=>a.id-b.id);if(!pieces.length)return;let i=pieces.findIndex(p=>p.id===model.selectedId);i=(i+(backward?-1:1)+pieces.length)%pieces.length;model.select(pieces[i].id);syncUI()}
-function reset(){clearTimeout(botTimer);pendingBot=false;preImpactSolids=null;preImpactPieces=null;falls=[];model.reset();positionVersion++;startBotWorker();ui.thinking.hidden=true;if(ui.promotion.open)ui.promotion.close();syncUI()}
-function undo(){if(transitionActive())return;clearTimeout(botTimer);pendingBot=false;ui.thinking.hidden=true;if(!model.undo())return;if(model.turn===Side.BLACK&&!model.winner)model.undo();positionVersion++;startBotWorker();syncUI()}
+function setPlane(plane){if(!isHumanTurn()||model.winner||model.pendingPromotionPieceId!=null||transitionActive())return;model.setPlane(plane);syncUI()}
+function cyclePiece(backward=false){if(!isHumanTurn()||transitionActive())return;const pieces=model.pieces.filter(p=>p.side===model.turn).sort((a,b)=>a.id-b.id);if(!pieces.length)return;let i=pieces.findIndex(p=>p.id===model.selectedId);i=(i+(backward?-1:1)+pieces.length)%pieces.length;model.select(pieces[i].id);syncUI()}
+function reset(){clearTimeout(botTimer);pendingBot=false;preImpactSolids=null;preImpactPieces=null;falls=[];model.reset();positionVersion++;startBotWorker();ui.thinking.hidden=true;if(ui.promotion.open)ui.promotion.close();syncUI();if(isBotTurn())queueBot()}
+function undo(){if(transitionActive())return;clearTimeout(botTimer);pendingBot=false;ui.thinking.hidden=true;if(!model.undo())return;if(matchMode===MatchMode.PVBOT&&model.turn===Side.BLACK&&!model.winner)model.undo();positionVersion++;startBotWorker();syncUI();if(isBotTurn())queueBot()}
 function queueBot(){
-  if(model.turn!==Side.BLACK||model.winner||model.pendingPromotionPieceId!=null||transitionActive())return;const version=++positionVersion;ui.thinking.hidden=false;syncUI();
-  botTimer=setTimeout(()=>{if(version!==positionVersion||model.turn!==Side.BLACK)return;const state=model.cloneForSimulation();botWorker.postMessage({version,state:{solids:[...state.solids],pieces:state.pieces,turn:state.turn,plane:state.plane,winner:state.winner,message:state.message,selectedId:state.selectedId,enPassantPawnId:state.enPassantPawnId,enPassantTarget:state.enPassantTarget,pendingPromotionPieceId:state.pendingPromotionPieceId,nextId:state.nextId}})},460);
+  if(!isBotTurn()||model.winner||model.pendingPromotionPieceId!=null||transitionActive())return;const version=++positionVersion;ui.thinking.hidden=false;syncUI();
+  botTimer=setTimeout(()=>{if(version!==positionVersion||!isBotTurn())return;const state=model.cloneForSimulation();botWorker.postMessage({version,state:{solids:[...state.solids],pieces:state.pieces,turn:state.turn,plane:state.plane,winner:state.winner,message:state.message,selectedId:state.selectedId,enPassantPawnId:state.enPassantPawnId,enPassantTarget:state.enPassantTarget,pendingPromotionPieceId:state.pendingPromotionPieceId,nextId:state.nextId}})},460);
 }
 function executeMove(target){
   const moving=model.selected;if(!moving)return;const beforeSolids=model.solids.slice(),beforePieces=clonePieces(model.pieces),from={...moving.position};
-  if(model.tryMove(target)){positionVersion++;pendingBot=model.pendingPromotionPieceId==null;startTransition(moving.id,from,beforeSolids,beforePieces)}syncUI();
+  if(model.tryMove(target)){positionVersion++;pendingBot=model.pendingPromotionPieceId==null&&isBotTurn();startTransition(moving.id,from,beforeSolids,beforePieces)}syncUI();
 }
 function hitAt(point){
-  if(model.turn!==Side.WHITE||model.winner||model.pendingPromotionPieceId!=null||transitionActive())return;
+  if(!isHumanTurn()||model.winner||model.pendingPromotionPieceId!=null||transitionActive())return;
   const radius=Math.max(18,32*renderer.width/1050),moves=model.selected?model.legalMoves():[];
   const moveHits=moves.map(target=>({target,screen:renderer.project(renderer.targetPoint(model,target))})).filter(h=>Math.hypot(point.x-h.screen.x,point.y-h.screen.y)<=radius).sort((a,b)=>a.screen.depth-b.screen.depth);
   if(moveHits.length){executeMove(moveHits[0].target);return}
@@ -92,7 +98,8 @@ canvas.addEventListener("wheel",e=>{if(!renderer.layerFocus)return;e.preventDefa
 function toggleLayer(){renderer.layerFocus=!renderer.layerFocus;ui.layer.setAttribute("aria-pressed",String(renderer.layerFocus));ui.layer.querySelector("b").textContent=`MB  LAYER FOCUS: ${renderer.layerFocus?`Z${String(renderer.focusLayer).padStart(2,"0")}`:"OFF"}`;ui.depth.disabled=!renderer.layerFocus;dirty=true}
 for(const button of ui.planes)button.addEventListener("click",()=>setPlane(button.dataset.plane));ui.layer.addEventListener("click",toggleLayer);ui.depth.addEventListener("input",()=>{renderer.focusLayer=Number(ui.depth.value);ui.depthOut.value=`Z${String(renderer.focusLayer).padStart(2,"0")}`;ui.layer.querySelector("b").textContent=`MB  LAYER FOCUS: Z${String(renderer.focusLayer).padStart(2,"0")}`;dirty=true});
 document.querySelector("#undo-button").addEventListener("click",undo);document.querySelector("#restart-button").addEventListener("click",reset);document.querySelector("#help-button").addEventListener("click",()=>ui.help.showModal());
-for(const button of document.querySelectorAll("[data-kind]"))button.addEventListener("click",()=>{if(model.promote(button.dataset.kind)){ui.promotion.close();positionVersion++;pendingBot=false;syncUI();queueBot()}});
+ui.mode.addEventListener("change",()=>{matchMode=ui.mode.value;reset()});
+for(const button of document.querySelectorAll("[data-kind]"))button.addEventListener("click",()=>{if(model.promote(button.dataset.kind)){ui.promotion.close();positionVersion++;pendingBot=false;syncUI();if(isBotTurn())queueBot()}});
 window.addEventListener("keydown",e=>{
   if(ui.help.open){if(["h","Escape"].includes(e.key))ui.help.close();return}const key=e.key.toLowerCase();if(ui.promotion.open){const promotion={q:Kind.QUEEN,r:Kind.ROOK,b:Kind.BISHOP,n:Kind.KNIGHT}[key];if(promotion)document.querySelector(`[data-kind="${promotion}"]`).click();return}
   if(["1","2","3"," ","tab","q","e","u","r","h","m","arrowup","arrowdown"].includes(key))e.preventDefault();

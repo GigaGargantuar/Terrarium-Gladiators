@@ -10,6 +10,8 @@ namespace TerrariumGladiators;
 
 public sealed class Game1 : Game
 {
+    private enum MatchMode { SameDevicePvp, PlayerVsBot, BotVsBot }
+
     private sealed class FallVisual
     {
         public required PieceFallEvent Fall { get; init; }
@@ -22,8 +24,6 @@ public sealed class Game1 : Game
 
     private const int WindowWidth = 1440;
     private const int WindowHeight = 900;
-    private const Side HumanSide = Side.White;
-    private const Side BotSide = Side.Black;
     private const float BotMoveDelay = .45f;
     private readonly GraphicsDeviceManager _graphics;
     private readonly TerrariumModel _model = new();
@@ -54,6 +54,7 @@ public sealed class Game1 : Game
     private Task<BotMove?>? _botSearch;
     private int _positionVersion;
     private int _botSearchVersion;
+    private MatchMode _matchMode = MatchMode.PlayerVsBot;
 
     private readonly Rectangle[] _planeButtons =
     {
@@ -66,6 +67,15 @@ public sealed class Game1 : Game
     };
     private static readonly PieceKind[] PromotionKinds =
         [PieceKind.Queen, PieceKind.Rook, PieceKind.Bishop, PieceKind.Knight];
+    private readonly Rectangle[] _modeButtons =
+    {
+        new(1090, 826, 86, 25), new(1183, 826, 96, 25), new(1286, 826, 86, 25)
+    };
+    private static readonly string[] ModeLabels = ["PVP", "PV BOT", "BOT V BOT"];
+
+    private bool IsBotTurn => _matchMode == MatchMode.BotVsBot ||
+                              _matchMode == MatchMode.PlayerVsBot && _model.Turn == Side.Black;
+    private bool IsHumanTurn => !IsBotTurn;
 
     public Game1()
     {
@@ -142,7 +152,7 @@ public sealed class Game1 : Game
             else Exit();
         }
         if (Pressed(keyboard, Keys.H)) _showHelp = !_showHelp;
-        var promotionReady = _model.PendingPromotionPieceId is not null && _preImpactTerrain is null;
+        var promotionReady = _model.PendingPromotionPieceId is not null && IsHumanTurn && _preImpactTerrain is null;
         if (promotionReady)
         {
             if (Pressed(keyboard, Keys.Q)) CompletePromotion(PieceKind.Queen);
@@ -152,13 +162,13 @@ public sealed class Game1 : Game
         }
         if (!promotionReady && Pressed(keyboard, Keys.R)) ResetGame();
         if (Pressed(keyboard, Keys.U)) Undo();
-        if (_model.Turn == HumanSide && (Pressed(keyboard, Keys.D1) || Pressed(keyboard, Keys.NumPad1)))
+        if (IsHumanTurn && (Pressed(keyboard, Keys.D1) || Pressed(keyboard, Keys.NumPad1)))
             _model.SetPlane(MovementPlane.XY);
-        if (_model.Turn == HumanSide && (Pressed(keyboard, Keys.D2) || Pressed(keyboard, Keys.NumPad2)))
+        if (IsHumanTurn && (Pressed(keyboard, Keys.D2) || Pressed(keyboard, Keys.NumPad2)))
             _model.SetPlane(MovementPlane.XZ);
-        if (_model.Turn == HumanSide && (Pressed(keyboard, Keys.D3) || Pressed(keyboard, Keys.NumPad3)))
+        if (IsHumanTurn && (Pressed(keyboard, Keys.D3) || Pressed(keyboard, Keys.NumPad3)))
             _model.SetPlane(MovementPlane.YZ);
-        if (_model.Turn == HumanSide && Pressed(keyboard, Keys.Space))
+        if (IsHumanTurn && Pressed(keyboard, Keys.Space))
             _model.SetPlane((MovementPlane)(((int)_model.Plane + 1) % 3));
         if (!promotionReady && Pressed(keyboard, Keys.Q)) _world.Yaw -= MathHelper.PiOver2;
         if (Pressed(keyboard, Keys.E)) _world.Yaw += MathHelper.PiOver2;
@@ -166,7 +176,7 @@ public sealed class Game1 : Game
             _world.HeightOffset = MathHelper.Clamp(_world.HeightOffset + elapsed * 4f, -7f, 7f);
         if (keyboard.IsKeyDown(Keys.Down))
             _world.HeightOffset = MathHelper.Clamp(_world.HeightOffset - elapsed * 4f, -7f, 7f);
-        if (_model.Turn == HumanSide && Pressed(keyboard, Keys.Tab))
+        if (IsHumanTurn && Pressed(keyboard, Keys.Tab))
             SelectNextPiece(keyboard.IsKeyDown(Keys.LeftShift) || keyboard.IsKeyDown(Keys.RightShift));
 
         if (mouse.MiddleButton == ButtonState.Pressed && _oldMouse.MiddleButton == ButtonState.Released)
@@ -244,13 +254,21 @@ public sealed class Game1 : Game
         ClearTransition();
     }
 
+    private void SetMatchMode(MatchMode mode)
+    {
+        if (_matchMode == mode) return;
+        _matchMode = mode;
+        ResetGame();
+    }
+
     private void Undo()
     {
         if (!_model.Undo()) return;
 
         // From the player's turn, undo both the bot reply and the player's
         // preceding move. During the bot's delay, a single undo is sufficient.
-        if (_model.Turn == BotSide && _model.Winner is null) _model.Undo();
+        if (_matchMode == MatchMode.PlayerVsBot && _model.Turn == Side.Black &&
+            _model.Winner is null) _model.Undo();
         _positionVersion++;
         _botDelayRemaining = BotMoveDelay;
         _botMoveUnavailable = false;
@@ -294,7 +312,7 @@ public sealed class Game1 : Game
 
             // Reset/undo may have replaced the position while the background
             // search was running. Never apply a result to a different state.
-            if (_botSearchVersion != _positionVersion || _model.Turn != BotSide ||
+            if (_botSearchVersion != _positionVersion || !IsBotTurn ||
                 _model.Winner is not null)
             {
                 _botDelayRemaining = BotMoveDelay;
@@ -304,7 +322,7 @@ public sealed class Game1 : Game
             if (completedMove is null)
             {
                 _botMoveUnavailable = true;
-                _model.SetMessage("Black bot has no legal move.");
+                _model.SetMessage($"{_model.Turn} bot has no legal move.");
                 return;
             }
 
@@ -312,7 +330,7 @@ public sealed class Game1 : Game
             return;
         }
 
-        if (_model.Winner is not null || _model.Turn != BotSide)
+        if (_model.Winner is not null || !IsBotTurn)
         {
             _botDelayRemaining = BotMoveDelay;
             _botMoveUnavailable = false;
@@ -355,6 +373,12 @@ public sealed class Game1 : Game
 
     private void HandleClick(Point point)
     {
+        for (var i = 0; i < _modeButtons.Length; i++)
+        {
+            if (!_modeButtons[i].Contains(point)) continue;
+            SetMatchMode((MatchMode)i);
+            return;
+        }
         if (_model.PendingPromotionPieceId is not null && _preImpactTerrain is null)
         {
             for (var i = 0; i < _promotionButtons.Length; i++)
@@ -372,10 +396,10 @@ public sealed class Game1 : Game
         for (var i = 0; i < _planeButtons.Length; i++)
         {
             if (!_planeButtons[i].Contains(point)) continue;
-            if (_model.Turn == HumanSide) _model.SetPlane((MovementPlane)i);
+            if (IsHumanTurn) _model.SetPlane((MovementPlane)i);
             return;
         }
-        if (_model.Turn != HumanSide) return;
+        if (!IsHumanTurn) return;
         if (point.X >= 1050) return;
 
         if (_model.Selected is not null)
@@ -593,7 +617,7 @@ public sealed class Game1 : Game
         var sideColor = _model.Turn == Side.White ? new Color(238, 224, 191) : new Color(239, 98, 118);
         var headline = _model.Winner is not null
             ? $"{_model.Winner.Value.ToString().ToUpper()} WINS"
-            : _model.Turn == BotSide ? "BLACK BOT THINKING" : "WHITE TO MOVE";
+            : IsBotTurn ? $"{_model.Turn.ToString().ToUpper()} BOT THINKING" : $"{_model.Turn.ToString().ToUpper()} TO MOVE";
         DrawText(headline, new Vector2(1090, 148), sideColor, .78f);
         DrawText(_model.Selected is null ? "No piece selected" : $"{_model.Selected.Kind}  ·  {TerrariumModel.CellName(_model.Selected.Position)}", new Vector2(1090, 183), new Color(139, 170, 173), .55f);
 
@@ -615,8 +639,9 @@ public sealed class Game1 : Game
         DrawText("Wheel  select depth   ·   H  rules", new Vector2(1090, 744), new Color(119, 150, 155), .43f);
         DrawSmallButton(new Rectangle(1090, 774, 135, 43), "U  UNDO");
         DrawSmallButton(new Rectangle(1237, 774, 135, 43), "R  RESTART");
-        DrawText("You are White  ·  Black is the bot", new Vector2(1090, 828), new Color(98, 130, 136), .43f);
-        DrawText("Right-click to deselect  ·  Esc to quit", new Vector2(1090, 850), new Color(74, 104, 111), .43f);
+        for (var i = 0; i < _modeButtons.Length; i++)
+            DrawModeButton(_modeButtons[i], ModeLabels[i], (int)_matchMode == i);
+        DrawText("Right-click to deselect  ·  Esc to quit", new Vector2(1090, 861), new Color(74, 104, 111), .43f);
 
         if (_showHelp) DrawHelpOverlay();
         else if (_model.PendingPromotionPieceId is not null && _preImpactTerrain is null) DrawPromotionOverlay();
@@ -687,6 +712,15 @@ public sealed class Game1 : Game
     {
         _spriteBatch.Draw(_pixel, rect, new Color(24, 37, 51)); Border(rect, new Color(56, 86, 94), 1);
         DrawText(label, new Vector2(rect.X + 18, rect.Y + 12), new Color(179, 197, 194), .52f);
+    }
+
+    private void DrawModeButton(Rectangle rect, string label, bool active)
+    {
+        _spriteBatch.Draw(_pixel, rect, active ? new Color(37, 100, 99) : new Color(24, 37, 51));
+        Border(rect, active ? new Color(77, 239, 215) : new Color(56, 86, 94), active ? 2 : 1);
+        var width = _font.MeasureString(label).X * .35f;
+        DrawText(label, new Vector2(rect.Center.X - width / 2, rect.Y + 7),
+            active ? new Color(239, 231, 201) : new Color(134, 159, 164), .35f);
     }
 
     private void DrawPanel(Rectangle rect) { _spriteBatch.Draw(_pixel, rect, new Color(9, 15, 25)); Border(rect, new Color(42, 72, 80), 1); }
