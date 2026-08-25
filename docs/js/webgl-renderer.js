@@ -105,8 +105,9 @@ export class WorldRenderer {
   project(p){const d=sub(p,this.camera),x=dot(d,this.right)/(this.orthoWidth/2),y=dot(d,this.up)/(this.orthoHeight/2);return{x:(x*.5+.5)*this.width,y:(.5-y*.5)*this.height,depth:dot(d,this.forward)}}
   clueVisible(solids,p){
     const target=vec(Math.round(p.x),Math.round(p.y),Math.floor(p.z));let previous="";
+    if(this.solid(solids,target.x,target.y,target.z))return false;
     // Orthographic screen rays are parallel to camera.forward. Walk from the
-    // clue toward the camera and reject it when another rendered voxel is met.
+    // clue toward the camera and reject it when any rendered voxel is met.
     for(let distance=.12;distance<42;distance+=.12){const sample=sub(p,mul(this.forward,distance)),cell=vec(Math.round(sample.x),Math.round(sample.y),Math.floor(sample.z)),k=`${cell.x},${cell.y},${cell.z}`;if(k===previous)continue;previous=k;if(cell.x===target.x&&cell.y===target.y&&cell.z===target.z)continue;if(this.layerFocus&&cell.z!==this.focusLayer)continue;if(this.solid(solids,cell.x,cell.y,cell.z))return false}
     return true;
   }

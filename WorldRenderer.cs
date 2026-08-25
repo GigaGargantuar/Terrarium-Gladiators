@@ -73,6 +73,7 @@ public sealed class WorldRenderer : IDisposable
     public bool IsClueVisible(bool[,,] solids, Int3 clue)
     {
         UpdateCamera();
+        if (Solid(solids, clue.X, clue.Y, clue.Z)) return false;
         var point = new Vector3(clue.X, clue.Y, clue.Z + .5f);
         var forward = Vector3.Normalize(new Vector3(3.5f, 3.5f, 7.4f + HeightOffset) - _cameraPosition);
         Int3? previous = null;
