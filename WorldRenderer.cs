@@ -48,6 +48,7 @@ public sealed class WorldRenderer : IDisposable
 
         BuildTerrain(terrainOverride ?? model.Solids);
         BuildLayerGuide();
+        BuildClues(model, terrainOverride ?? model.Solids);
         BuildMoveHints(model, legalMoves);
         foreach (var rendered in pieces.OrderBy(p => Vector3.DistanceSquared(p.Position, _cameraPosition)).Reverse())
             BuildPiece(rendered, rendered.Piece.Id == model.SelectedId);
@@ -68,25 +69,6 @@ public sealed class WorldRenderer : IDisposable
         UpdateCamera();
         var projected = _worldViewport.Project(world, _projection, _view, Matrix.Identity);
         return new Vector2(projected.X, projected.Y);
-    }
-
-    public bool IsClueVisible(bool[,,] solids, Int3 clue)
-    {
-        UpdateCamera();
-        if (Solid(solids, clue.X, clue.Y, clue.Z)) return false;
-        var point = new Vector3(clue.X, clue.Y, clue.Z + .5f);
-        var forward = Vector3.Normalize(new Vector3(3.5f, 3.5f, 7.4f + HeightOffset) - _cameraPosition);
-        Int3? previous = null;
-        for (var distance = .12f; distance < 42f; distance += .12f)
-        {
-            var sample = point - forward * distance;
-            var cell = new Int3((int)MathF.Round(sample.X), (int)MathF.Round(sample.Y), (int)MathF.Floor(sample.Z));
-            if (cell == previous || cell == clue) continue;
-            previous = cell;
-            if (LayerFocus && cell.Z != FocusLayer) continue;
-            if (Solid(solids, cell.X, cell.Y, cell.Z)) return false;
-        }
-        return true;
     }
 
     public Vector2 ProjectTarget(TerrariumModel model, Int3 target)
@@ -193,6 +175,46 @@ public sealed class WorldRenderer : IDisposable
                 .78f, Color.Multiply(color, 1.3f), .025f);
         }
     }
+
+    private void BuildClues(TerrariumModel model, bool[,,] solids)
+    {
+        foreach (var cell in model.RevealedClues)
+        {
+            var clue = model.ClueAt(cell);
+            if (clue is null || (!LayerFocus && clue == 0) || (LayerFocus && cell.Z != FocusLayer) ||
+                Solid(solids, cell.X, cell.Y, cell.Z)) continue;
+
+            var digits = clue.Value.ToString();
+            var scale = digits.Length > 1 ? .68f : 1f;
+            var color = clue >= 4 ? new Color(255, 102, 122) :
+                clue >= 2 ? new Color(255, 209, 102) : clue == 0 ? new Color(54, 115, 119) : new Color(127, 255, 240);
+            for (var index = 0; index < digits.Length; index++)
+            {
+                var offset = (index - (digits.Length - 1) / 2f) * .38f * scale;
+                foreach (var segment in DigitSegments(digits[index]))
+                {
+                    var (x, y, horizontal) = segment switch
+                    {
+                        'a' => (0f, .25f, true), 'b' => (.16f, .13f, false),
+                        'c' => (.16f, -.13f, false), 'd' => (0f, -.25f, true),
+                        'e' => (-.16f, -.13f, false), 'f' => (-.16f, .13f, false),
+                        _ => (0f, 0f, true)
+                    };
+                    var center = new Vector3(cell.X + offset + x * scale, cell.Y + y * scale, cell.Z + .055f);
+                    var size = horizontal ? new Vector3(.30f * scale, .065f * scale, .07f) :
+                        new Vector3(.065f * scale, .23f * scale, .07f);
+                    AddBox(center, size, color, false);
+                }
+            }
+        }
+    }
+
+    private static string DigitSegments(char digit) => digit switch
+    {
+        '0' => "abcdef", '1' => "bc", '2' => "abdeg", '3' => "abcdg", '4' => "bcfg",
+        '5' => "acdfg", '6' => "acdefg", '7' => "abc", '8' => "abcdefg", '9' => "abcdfg",
+        _ => string.Empty
+    };
 
     private (Vector3 Center, Vector3 U, Vector3 V, Vector3 Normal) MoveHintGeometry(
         TerrariumModel model, Int3 target, bool excavation)

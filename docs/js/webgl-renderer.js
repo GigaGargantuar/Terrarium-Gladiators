@@ -103,14 +103,6 @@ export class WorldRenderer {
     this.orthoHeight=17.6;this.orthoWidth=this.orthoHeight*(this.width/this.height);
   }
   project(p){const d=sub(p,this.camera),x=dot(d,this.right)/(this.orthoWidth/2),y=dot(d,this.up)/(this.orthoHeight/2);return{x:(x*.5+.5)*this.width,y:(.5-y*.5)*this.height,depth:dot(d,this.forward)}}
-  clueVisible(solids,p){
-    const target=vec(Math.round(p.x),Math.round(p.y),Math.floor(p.z));let previous="";
-    if(this.solid(solids,target.x,target.y,target.z))return false;
-    // Orthographic screen rays are parallel to camera.forward. Walk from the
-    // clue toward the camera and reject it when any rendered voxel is met.
-    for(let distance=.12;distance<42;distance+=.12){const sample=sub(p,mul(this.forward,distance)),cell=vec(Math.round(sample.x),Math.round(sample.y),Math.floor(sample.z)),k=`${cell.x},${cell.y},${cell.z}`;if(k===previous)continue;previous=k;if(cell.x===target.x&&cell.y===target.y&&cell.z===target.z)continue;if(this.layerFocus&&cell.z!==this.focusLayer)continue;if(this.solid(solids,cell.x,cell.y,cell.z))return false}
-    return true;
-  }
   targetPoint(model,target){return this.moveGeometry(model,target,model.isExcavationTarget(target)).center}
   moveGeometry(model,target,excavation){
     if(model.plane===Plane.XZ){const n=this.camera.y>=target.y?vec(0,1,0):vec(0,-1,0),off=excavation?.505:.012;return{center:add(vec(target.x,target.y,target.z+.49),mul(n,off)),u:vec(1,0,0),v:vec(0,0,1),normal:n}}
@@ -143,6 +135,14 @@ export class WorldRenderer {
       if(dot(cross(sub(b,a),sub(c,a)),g.normal)>=0)mesh.quad(a,b,c,d,col,true);else mesh.quad(d,c,b,a,col,true);mesh.planeFrame(add(g.center,mul(g.normal,.006)),g.u,g.v,.78,shade(col,1.3),.025,g.normal);
     }
   }
+  buildClues(mesh,model,solids){
+    const glyphs={0:"abcdef",1:"bc",2:"abdeg",3:"abcdg",4:"bcfg",5:"acdfg",6:"acdefg",7:"abc",8:"abcdefg",9:"abcdfg"};
+    const segments={a:[0,.25,1],b:[.16,.13,0],c:[.16,-.13,0],d:[0,-.25,1],e:[-.16,-.13,0],f:[-.16,.13,0],g:[0,0,1]};
+    for(const encoded of model.revealedClues??[]){const[x,y,z]=encoded.split(",").map(Number),clue=model.clueAt({x,y,z});if(clue==null||(!this.layerFocus&&clue===0)||(this.layerFocus&&z!==this.focusLayer)||this.solid(solids,x,y,z))continue;
+      const digits=String(clue),scale=digits.length>1?.68:1,col=clue>=4?color(255,102,122):clue>=2?color(255,209,102):clue===0?color(54,115,119):color(127,255,240);
+      for(let index=0;index<digits.length;index++){const offset=(index-(digits.length-1)/2)*.38*scale;for(const id of glyphs[digits[index]]??[]){const[sx,sy,horizontal]=segments[id],center=vec(x+offset+sx*scale,y+sy*scale,z+.055),size=horizontal?vec(.30*scale,.065*scale,.07):vec(.065*scale,.23*scale,.07);mesh.box(center,size,col)}}
+    }
+  }
   buildPiece(mesh,rendered,selected){
     const p=rendered.piece,o=rendered.opacity,transparent=o<.98,body=alpha(p.side===Side.WHITE?color(235,225,199):color(35,41,55),o),trim=alpha(p.side===Side.WHITE?color(73,218,200):color(231,83,109),o),dark=alpha(p.side===Side.WHITE?color(154,158,146):color(12,16,24),o),at=rendered.position;
     if(selected){mesh.disc(add(at,vec(0,0,.015)),.48,24,alpha(color(78,255,224,115),o));mesh.ring(add(at,vec(0,0,.021)),.49,.035,28,alpha(color(119,255,233),o))}
@@ -158,7 +158,7 @@ export class WorldRenderer {
   vertices(triangles){const data=new Float32Array(triangles.length*21);let i=0;for(const t of triangles)for(const p of t.points){data[i++]=p.x;data[i++]=p.y;data[i++]=p.z;data[i++]=t.color[0];data[i++]=t.color[1];data[i++]=t.color[2];data[i++]=t.color[3]}return data}
   drawTriangles(triangles,transparent=false){if(!triangles.length)return;const gl=this.gl,data=this.vertices(triangles);gl.bindBuffer(gl.ARRAY_BUFFER,this.buffer);gl.bufferData(gl.ARRAY_BUFFER,data,gl.DYNAMIC_DRAW);if(transparent){gl.enable(gl.BLEND);gl.blendFunc(gl.SRC_ALPHA,gl.ONE_MINUS_SRC_ALPHA);gl.depthMask(false)}else{gl.disable(gl.BLEND);gl.depthMask(true)}gl.drawArrays(gl.TRIANGLES,0,data.length/7);if(transparent){gl.depthMask(true);gl.disable(gl.BLEND)}}
   render(model,solids,pieces,moves){
-    this.resize();const mesh=new MeshBuilder();this.buildTerrain(mesh,solids);this.buildHints(mesh,model,moves);for(const p of [...pieces].sort((a,b)=>dot(sub(b.position,this.camera),sub(b.position,this.camera))-dot(sub(a.position,this.camera),sub(a.position,this.camera))))this.buildPiece(mesh,p,p.piece.id===model.selectedId);
+    this.resize();const mesh=new MeshBuilder();this.buildTerrain(mesh,solids);this.buildClues(mesh,model,solids);this.buildHints(mesh,model,moves);for(const p of [...pieces].sort((a,b)=>dot(sub(b.position,this.camera),sub(b.position,this.camera))-dot(sub(a.position,this.camera),sub(a.position,this.camera))))this.buildPiece(mesh,p,p.piece.id===model.selectedId);
     mesh.transparent.sort((a,b)=>dot(sub(b.center,this.camera),sub(b.center,this.camera))-dot(sub(a.center,this.camera),sub(a.center,this.camera)));
     const gl=this.gl,l=this.locations;gl.clearColor(7/255,11/255,20/255,1);gl.clear(gl.COLOR_BUFFER_BIT|gl.DEPTH_BUFFER_BIT);gl.useProgram(this.program);gl.uniform3f(l.camera,this.camera.x,this.camera.y,this.camera.z);gl.uniform3f(l.right,this.right.x,this.right.y,this.right.z);gl.uniform3f(l.up,this.up.x,this.up.y,this.up.z);gl.uniform3f(l.forward,this.forward.x,this.forward.y,this.forward.z);gl.uniform2f(l.halfSize,this.orthoWidth/2,this.orthoHeight/2);gl.uniform2f(l.depth,.1,80);this.drawTriangles(mesh.opaque);this.drawTriangles(mesh.transparent,true);
   }

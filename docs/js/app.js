@@ -2,7 +2,7 @@ import { TerrariumModel, Side, Kind, Plane } from "./engine.js";
 import { WorldRenderer } from "./webgl-renderer.js";
 
 const model=new TerrariumModel(),canvas=document.querySelector("#board"),renderer=new WorldRenderer(canvas);
-const ui={turn:document.querySelector("#turn-label"),message:document.querySelector("#message"),selected:document.querySelector("#selected-piece"),planes:[...document.querySelectorAll("[data-plane]")],mode:document.querySelector("#mode-select"),role:document.querySelector("#role-note"),mine:document.querySelector("#minesweeper-toggle"),clues:document.querySelector("#clue-layer"),scout:document.querySelector("#scout-controls"),scoutPattern:document.querySelector("#scout-pattern"),scoutButton:document.querySelector("#scout-button"),layer:document.querySelector("#layer-toggle"),depth:document.querySelector("#depth-slider"),depthOut:document.querySelector("#depth-output"),camera:document.querySelector("#camera-readout"),help:document.querySelector("#help-dialog"),promotion:document.querySelector("#promotion-dialog"),thinking:document.querySelector("#thinking")};
+const ui={turn:document.querySelector("#turn-label"),message:document.querySelector("#message"),selected:document.querySelector("#selected-piece"),planes:[...document.querySelectorAll("[data-plane]")],mode:document.querySelector("#mode-select"),role:document.querySelector("#role-note"),mine:document.querySelector("#minesweeper-toggle"),scout:document.querySelector("#scout-controls"),scoutPattern:document.querySelector("#scout-pattern"),scoutButton:document.querySelector("#scout-button"),layer:document.querySelector("#layer-toggle"),depth:document.querySelector("#depth-slider"),depthOut:document.querySelector("#depth-output"),camera:document.querySelector("#camera-readout"),help:document.querySelector("#help-dialog"),promotion:document.querySelector("#promotion-dialog"),thinking:document.querySelector("#thinking")};
 let botWorker=null,botTimer=null,positionVersion=0,dirty=true,lastTime=performance.now(),pointerStart=null,pointerLast=null,dragging=false;
 const MatchMode=Object.freeze({PVP:"pvp",PVBOT:"pvbot",BOTVBOT:"botvbot"});
 let matchMode=MatchMode.PVBOT,falls=[],preImpactSolids=null,preImpactPieces=null,impactTime=0,pendingBot=false;
@@ -65,9 +65,8 @@ function syncUI(){
   if(model.pendingPromotionPieceId!=null&&isHumanTurn()&&!transitionActive()&&!ui.promotion.open)ui.promotion.showModal();dirty=true;
 }
 function draw(){
-  renderer.render(model,preImpactSolids??model.solids,renderPieces(),transitionActive()?[]:model.selected?model.legalMoves():[]);renderClues();dirty=false;
+  renderer.render(model,preImpactSolids??model.solids,renderPieces(),transitionActive()?[]:model.selected?model.legalMoves():[]);dirty=false;
 }
-function renderClues(){if(!model.minesweeperEnabled){ui.clues.replaceChildren();return}const nodes=[],solids=preImpactSolids??model.solids;for(const encoded of model.revealedClues){const[x,y,z]=encoded.split(",").map(Number),clue=model.clueAt({x,y,z}),world={x,y,z:z+.5};if(clue==null||(!renderer.layerFocus&&clue===0)||(renderer.layerFocus&&z!==renderer.focusLayer)||!renderer.clueVisible(solids,world))continue;const screen=renderer.project(world);if(screen.x<0||screen.x>renderer.width||screen.y<0||screen.y>renderer.height)continue;const marker=document.createElement("span");marker.className=`mine-clue c${Math.min(8,clue)}`;marker.textContent=clue;marker.style.left=`${screen.x}px`;marker.style.top=`${screen.y}px`;nodes.push(marker)}ui.clues.replaceChildren(...nodes)}
 function frame(now){const dt=Math.min(.05,(now-lastTime)/1000);lastTime=now;updateTransition(dt);if(dirty)draw();requestAnimationFrame(frame)}
 requestAnimationFrame(frame);new ResizeObserver(()=>{dirty=true}).observe(canvas);
 
