@@ -151,24 +151,25 @@ export class TerrariumModel {
       const to = member.destination, k = key(to);
       if (!TerrariumModel.isInside(to) || this.isSolid(to) || occupied.has(k)) return false;
       occupied.add(k); const occupant = this.pieceAt(to);
-      if (occupant && !carriedIds.has(occupant.id) && occupant.id !== piece.id) return false;
+      if (occupant && !carriedIds.has(occupant.id) && occupant.id !== piece.id && occupant.side===member.piece.side) return false;
     }
     return true;
   }
 
   planTowerTransport(piece, destination) {
     const tower = this.towerAbove(piece); if (!tower.length) return { members: [], knockedOff: 0 };
+    const movingIds=new Set([piece.id,...tower.map(member=>member.id)]),obstructed=(member,cell,landing)=>{const occupant=this.pieceAt(cell);return this.isSolid(cell)||!!occupant&&!movingIds.has(occupant.id)&&(!landing||occupant.side===member.side)};
     const delta = sub(destination, piece.position);
     if (eq(delta,v(0,0,0))) return { members: tower.map(p => ({piece:p,destination:{...p.position}})), knockedOff:0 };
     if (piece.kind === Kind.KNIGHT) {
-      const obstruction = tower.findIndex(member => this.isSolid(add(member.position,delta)));
+      const obstruction = tower.findIndex(member => obstructed(member,add(member.position,delta),true));
       return { members:tower.map((p,i)=>({piece:p,destination: obstruction < 0 || i < obstruction ? add(p.position,delta) : {...p.position}})), knockedOff:obstruction<0?0:tower.length-obstruction };
     }
-    if (![Kind.ROOK,Kind.BISHOP,Kind.QUEEN].includes(piece.kind)) return { members:tower.map(p=>({piece:p,destination:add(p.position,delta)})), knockedOff:0 };
+    if (![Kind.ROOK,Kind.BISHOP,Kind.QUEEN].includes(piece.kind)){const obstruction=tower.findIndex(member=>obstructed(member,add(member.position,delta),true));return{members:tower.map((p,i)=>({piece:p,destination:obstruction<0||i<obstruction?add(p.position,delta):{...p.position}})),knockedOff:obstruction<0?0:tower.length-obstruction};}
     const direction = this.stepToward(piece.position,destination), distance = Math.max(Math.abs(delta.x),Math.abs(delta.y),Math.abs(delta.z));
     let active = [...tower], knockedOff = 0; const destinations = new Map();
     for (let step=1; step<=distance && active.length; step++) {
-      const collision = active.findIndex(member=>this.isSolid(add(member.position,mul(direction,step))));
+      const collision = active.findIndex(member=>obstructed(member,add(member.position,mul(direction,step)),step===distance));
       if (collision<0) continue;
       for (let i=collision;i<active.length;i++) destinations.set(active[i].id,add(active[i].position,mul(direction,step-1)));
       knockedOff += active.length-collision; active=active.slice(0,collision);
@@ -194,10 +195,11 @@ export class TerrariumModel {
     const castling=piece.kind===Kind.KING&&this.plane===Plane.XY&&target.y===from.y&&target.z===from.z&&Math.abs(target.x-from.x)===2;
     if(excavating){this.setSolid(target.x,target.y,target.z,false);destination=this.moveDestination(piece,target,true);events.push(`${piece.kind} excavated ${TerrariumModel.cellName(target)}.`);}
     else{let captured=this.pieceAt(target);if(!captured&&piece.kind===Kind.PAWN&&eq(previousTarget,target)&&previousPawn!=null)captured=this.pieces.find(p=>p.id===previousPawn);if(captured){this.destroyPiece(captured,`${piece.kind} captured ${captured.kind}.`);events.push(eq(previousTarget,target)?`En passant captured ${captured.side} ${captured.kind}.`:`Captured ${captured.side} ${captured.kind}.`);}}
-    const transport=this.planTowerTransport(piece,destination),transported=transport.members.filter(m=>!eq(m.piece.position,m.destination)).length;
+    const transport=this.planTowerTransport(piece,destination),transported=transport.members.filter(m=>!eq(m.piece.position,m.destination)).length,movingIds=new Set([piece.id,...transport.members.map(m=>m.piece.id)]);
+    for(const move of transport.members.filter(m=>!eq(m.piece.position,m.destination))){const collided=this.pieceAt(move.destination);if(!collided||movingIds.has(collided.id)||collided.side===move.piece.side)continue;this.destroyPiece(collided,`${move.piece.kind} in the moving tower captured ${collided.kind}.`);events.push(`Carried ${move.piece.side} ${move.piece.kind} captured ${collided.side} ${collided.kind}.`)}
     piece.position=destination;piece.hasMoved=true;
     for(const member of transport.members){const carriedFrom={...member.piece.position};member.piece.position={...member.destination};if(eq(carriedFrom,member.destination))continue;member.piece.hasMoved=true;this.lastFalls.push({pieceId:member.piece.id,side:member.piece.side,kind:member.piece.kind,from:carriedFrom,to:{...member.destination},perished:false,startsWithMove:true});}
-    if(transported)events.push(`${transported+1}-piece section moved together.`);if(transport.knockedOff)events.push(`${piece.kind===Kind.KNIGHT?"An overhang left":"An overhang knocked"} ${transport.knockedOff} tower piece(s) behind!`);
+    if(transported)events.push(`${transported+1}-piece section moved together.`);if(transport.knockedOff)events.push(`${piece.kind===Kind.KNIGHT?"An obstruction left":"An obstruction knocked"} ${transport.knockedOff} tower piece(s) behind!`);
     if(castling){const direction=Math.sign(target.x-from.x),rookFrom=v(direction<0?0:7,from.y,from.z),rook=this.pieceAt(rookFrom);if(rook){const rookTo=v(target.x-direction,from.y,from.z);rook.position=rookTo;rook.hasMoved=true;this.lastFalls.push({pieceId:rook.id,side:rook.side,kind:rook.kind,from:rookFrom,to:rookTo,perished:false,startsWithMove:true});events.push(direction>0?"Castled kingside.":"Castled queenside.");}}
     if(piece.kind===Kind.PAWN&&this.plane===Plane.XY&&from.z===target.z&&Math.abs(target.y-from.y)===2){this.enPassantPawnId=piece.id;this.enPassantTarget=v(from.x,(from.y+target.y)/2,from.z);}
     if(this.winner)return this.finishMove();

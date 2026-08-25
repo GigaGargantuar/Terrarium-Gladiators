@@ -292,7 +292,8 @@ public sealed class TerrariumModel
         {
             if (!IsInside(carriedTo) || IsSolid(carriedTo) || !occupiedDestinations.Add(carriedTo)) return false;
             var occupant = PieceAt(carriedTo);
-            if (occupant is not null && !carriedIds.Contains(occupant.Id) && occupant.Id != piece.Id)
+            if (occupant is not null && !carriedIds.Contains(occupant.Id) &&
+                occupant.Id != piece.Id && occupant.Side == member.Side)
                 return false;
         }
         return true;
@@ -302,6 +303,10 @@ public sealed class TerrariumModel
     {
         var tower = TowerAbove(piece);
         if (tower.Count == 0) return new TowerTransport([], 0);
+        var movingIds = tower.Select(member => member.Id).Append(piece.Id).ToHashSet();
+        bool Obstructed(ChessPiece member, Int3 cell, bool landing) => IsSolid(cell) ||
+            PieceAt(cell) is { } occupant && !movingIds.Contains(occupant.Id) &&
+            (!landing || occupant.Side == member.Side);
 
         var delta = destination - piece.Position;
         if (delta == new Int3(0, 0, 0))
@@ -313,7 +318,8 @@ public sealed class TerrariumModel
             // section must remain contiguous. It carries members bottom-up
             // until the first translated cell is obstructed; that member and
             // the entire section above it stay in the original column.
-            var obstructionIndex = tower.FindIndex(member => IsSolid(member.Position + delta));
+            var obstructionIndex = tower.FindIndex(member =>
+                Obstructed(member, member.Position + delta, true));
             var members = tower.Select((member, index) =>
             {
                 var carried = obstructionIndex < 0 || index < obstructionIndex;
@@ -324,11 +330,21 @@ public sealed class TerrariumModel
         }
 
         if (piece.Kind is not (PieceKind.Rook or PieceKind.Bishop or PieceKind.Queen))
-            return new TowerTransport(tower.Select(member => (member, member.Position + delta)).ToList(), 0);
+        {
+            var obstructionIndex = tower.FindIndex(member =>
+                Obstructed(member, member.Position + delta, true));
+            var members = tower.Select((member, index) =>
+                (member, obstructionIndex < 0 || index < obstructionIndex
+                    ? member.Position + delta
+                    : member.Position)).ToList();
+            var leftBehind = obstructionIndex < 0 ? 0 : tower.Count - obstructionIndex;
+            return new TowerTransport(members, leftBehind);
+        }
 
-        // Sliding stacks sweep through every intermediate cell. If an upper
-        // member meets terrain, that member and everything above it stop at
-        // the final clear step and detach; lower members keep travelling.
+        // Sliding stacks sweep through every intermediate cell. Any piece or
+        // terrain blocks that sweep; at the landing step, only terrain or a
+        // same-side piece blocks the carried member. The blocked member and
+        // everything above it detach while lower members keep travelling.
         var direction = StepToward(piece.Position, destination);
         var distance = Math.Max(Math.Abs(delta.X), Math.Max(Math.Abs(delta.Y), Math.Abs(delta.Z)));
         var active = tower.ToList();
@@ -336,7 +352,8 @@ public sealed class TerrariumModel
         var knockedOff = 0;
         for (var step = 1; step <= distance && active.Count > 0; step++)
         {
-            var collisionIndex = active.FindIndex(member => IsSolid(member.Position + direction * step));
+            var collisionIndex = active.FindIndex(member =>
+                Obstructed(member, member.Position + direction * step, step == distance));
             if (collisionIndex < 0) continue;
 
             for (var index = collisionIndex; index < active.Count; index++)
@@ -460,6 +477,14 @@ public sealed class TerrariumModel
 
         var transport = PlanTowerTransport(piece, destination);
         var transportedCount = transport.Members.Count(move => move.Piece.Position != move.Destination);
+        var movingIds = transport.Members.Select(move => move.Piece.Id).Append(piece.Id).ToHashSet();
+        foreach (var (member, carriedTo) in transport.Members.Where(move => move.Piece.Position != move.Destination))
+        {
+            var collided = PieceAt(carriedTo);
+            if (collided is null || movingIds.Contains(collided.Id) || collided.Side == member.Side) continue;
+            DestroyPiece(collided, $"{member.Kind} in the moving tower captured {collided.Kind}.");
+            events.Add($"Carried {member.Side} {member.Kind} captured {collided.Side} {collided.Kind}.");
+        }
         piece.Position = destination;
         piece.HasMoved = true;
         foreach (var (member, carriedTo) in transport.Members)
@@ -475,8 +500,8 @@ public sealed class TerrariumModel
             events.Add($"{transportedCount + 1}-piece section moved together.");
         if (transport.KnockedOff > 0)
             events.Add(piece.Kind == PieceKind.Knight
-                ? $"An overhang left {transport.KnockedOff} obstructed tower piece(s) behind!"
-                : $"An overhang knocked {transport.KnockedOff} piece(s) off the moving tower!");
+                ? $"An obstruction left {transport.KnockedOff} tower piece(s) behind!"
+                : $"An obstruction knocked {transport.KnockedOff} piece(s) off the moving tower!");
 
         if (castling)
         {

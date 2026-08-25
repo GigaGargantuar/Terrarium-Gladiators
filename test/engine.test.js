@@ -121,6 +121,59 @@ test("moving the bottom piece carries its contiguous tower", () => {
   );
 });
 
+test("a tower base can capture beneath another tower and knocks off blocked members", () => {
+  const game = new TerrariumModel(false);
+  game.solids = new Uint8Array(8 * 8 * 16);
+  game.pieces = [
+    { id:1, side:Side.WHITE, kind:Kind.ROOK, position:{x:0,y:0,z:0}, hasMoved:true },
+    // Obstruction is compared with the carried member, not the moving base.
+    { id:2, side:Side.BLACK, kind:Kind.PAWN, position:{x:0,y:0,z:1}, hasMoved:true },
+    { id:3, side:Side.WHITE, kind:Kind.BISHOP, position:{x:0,y:0,z:2}, hasMoved:true },
+    { id:4, side:Side.BLACK, kind:Kind.KNIGHT, position:{x:3,y:0,z:0}, hasMoved:true },
+    { id:5, side:Side.BLACK, kind:Kind.QUEEN, position:{x:3,y:0,z:1}, hasMoved:true },
+    { id:6, side:Side.WHITE, kind:Kind.KING, position:{x:7,y:0,z:0}, hasMoved:true },
+    { id:7, side:Side.BLACK, kind:Kind.KING, position:{x:7,y:7,z:0}, hasMoved:true },
+  ];
+  game.turn=Side.WHITE; game.plane=Plane.XY; game.winner=null; game.selectedId=null;
+  game.enPassantPawnId=null; game.enPassantTarget=null; game.pendingPromotionPieceId=null;
+  game.nextId=8; game.history=[]; game.lastFalls=[]; game.message="";
+
+  const target = {x:3,y:0,z:0};
+  assert.ok(game.legalMoves(game.pieces[0]).some(move =>
+    move.x===target.x && move.y===target.y && move.z===target.z));
+  assert.equal(game.select(1), true);
+  assert.equal(game.tryMove(target), true);
+
+  assert.equal(game.pieces.some(piece => piece.id===4), false, "captured base survives");
+  assert.deepEqual(game.pieces.find(piece => piece.id===1)?.position, target);
+  assert.deepEqual(game.pieces.find(piece => piece.id===5)?.position, {x:3,y:0,z:1});
+  assert.deepEqual(game.pieces.find(piece => piece.id===2)?.position, {x:2,y:0,z:0});
+  assert.deepEqual(game.pieces.find(piece => piece.id===3)?.position, {x:2,y:0,z:1});
+  assert.match(game.message, /obstruction knocked 2 tower piece/i);
+});
+
+test("a carried piece captures an opposing piece above the captured tower base", () => {
+  const game = tacticalPosition([
+    tacticalPiece(1, Side.WHITE, Kind.ROOK, 0, 0),
+    tacticalPiece(2, Side.WHITE, Kind.PAWN, 0, 0, 1),
+    tacticalPiece(3, Side.BLACK, Kind.KNIGHT, 3, 0),
+    tacticalPiece(4, Side.BLACK, Kind.QUEEN, 3, 0, 1),
+    tacticalPiece(5, Side.WHITE, Kind.KING, 7, 0),
+    tacticalPiece(6, Side.BLACK, Kind.KING, 7, 7),
+  ], Side.WHITE);
+
+  const target = {x:3,y:0,z:0};
+  assert.ok(game.legalMoves(game.pieces[0]).some(move =>
+    move.x===target.x && move.y===target.y && move.z===target.z));
+  game.select(1);
+  assert.equal(game.tryMove(target), true);
+
+  assert.equal(game.pieces.some(piece => piece.id===3 || piece.id===4), false);
+  assert.deepEqual(game.pieces.find(piece => piece.id===1)?.position, target);
+  assert.deepEqual(game.pieces.find(piece => piece.id===2)?.position, {x:3,y:0,z:1});
+  assert.match(game.message, /Carried White Pawn captured Black Queen/);
+});
+
 test("capturing the king ends the game", () => {
   const game = new TerrariumModel(false);
   game.solids = new Uint8Array(8 * 8 * 16);

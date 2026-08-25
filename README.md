@@ -112,8 +112,10 @@ piece will break it; otherwise it is red.
   transported tower falls two or more cells onto terrain, its moved bottom
   piece is squashed by the pieces above it and the impact leaves a crater.
 - Sliding Rooks, Bishops, and Queens sweep their carried towers through the
-  whole path. If terrain overhangs the path, the first colliding member and all
-  members above it stop at the last clear cell, detach, and fall normally.
+  whole path, where terrain or any non-carried piece blocks an intermediate
+  step. At the landing cells above a captured tower base, a same-side piece
+  obstructs the colliding carried member: that member and everything above it
+  detach and fall normally. An opposing piece in that landing cell is captured.
   Knights jump and carry the tower upward from its base only until the first
   member whose destination intersects terrain. That member and the entire
   section above it stay behind and then obey gravity.
