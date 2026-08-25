@@ -325,3 +325,30 @@ test("excavating a mine blasts pieces in 3x3x3 without collateral terrain damage
   assert.equal(game.mineAt(3,3,3),false);
   assert.match(events.join(" "),/Mine detonated/);
 });
+
+test("a fall that punches through terrain resets damage at every destroyed cell", () => {
+  const game=tacticalPosition([tacticalPiece(1,Side.WHITE,Kind.ROOK,3,3,10)],Side.WHITE);
+  game.setSolid(3,3,7,true); // 2-cell fall, then reset at Z7.
+  game.setSolid(3,3,3,true); // 3-cell fall, then reset at Z3.
+  const events=[];game.resolveGravity(events);
+
+  assert.deepEqual(game.pieces[0]?.position,{x:3,y:3,z:0});
+  assert.equal(game.solidAt(3,3,7),false);
+  assert.equal(game.solidAt(3,3,3),false);
+  assert.deepEqual(game.lastFalls.filter(fall=>fall.pieceId===1).map(fall=>[fall.from.z,fall.to.z,fall.perished]),[
+    [10,7,false],[7,3,false],[3,0,false],
+  ]);
+});
+
+test("fall damage continues normally after a reset and can kill on a later segment", () => {
+  const game=tacticalPosition([tacticalPiece(1,Side.WHITE,Kind.ROOK,3,3,10)],Side.WHITE);
+  game.setSolid(3,3,7,true); // Initial 2-cell fall survives and dents the floor.
+  game.setSolid(3,3,2,true); // Fresh fall from Z7 is 4 cells and is fatal.
+  const events=[];game.resolveGravity(events);
+
+  assert.equal(game.pieces.some(piece=>piece.id===1),false);
+  assert.deepEqual(game.lastFalls.filter(fall=>fall.pieceId===1).map(fall=>[fall.from.z,fall.to.z,fall.perished]),[
+    [10,7,false],[7,2,true],
+  ]);
+  assert.match(events.join(" "),/perished after 4 cells/);
+});

@@ -736,7 +736,11 @@ public sealed class TerrariumModel
         // Work bottom-up until terrain and every piece column are stable.
         for (var pass = 0; pass < 64; pass++)
         {
-            var changed = ResolveTerrainGravity(events);
+            // Finish piece fall segments before resolving secondary cave-ins.
+            // When an impact destroys its support cell, the survivor is placed
+            // in that cell; the next pass therefore measures a fresh fall from
+            // the last destroyed cell instead of accumulating the earlier drop.
+            var changed = false;
             for (var x = 0; x < 8 && !changed; x++)
             for (var y = 0; y < 8 && !changed; y++)
             {
@@ -851,6 +855,7 @@ public sealed class TerrariumModel
                     break;
                 }
             }
+            if (!changed) changed = ResolveTerrainGravity(events);
             if (!changed || Winner is not null) break;
         }
     }

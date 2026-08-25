@@ -188,6 +188,9 @@ public sealed class WorldRenderer : IDisposable
             var scale = digits.Length > 1 ? .68f : 1f;
             var color = clue >= 4 ? new Color(255, 102, 122) :
                 clue >= 2 ? new Color(255, 209, 102) : clue == 0 ? new Color(54, 115, 119) : new Color(127, 255, 240);
+            var away = new Vector3(cell.X - _cameraPosition.X, cell.Y - _cameraPosition.Y, 0);
+            away = away.LengthSquared() > .0001f ? Vector3.Normalize(away) : Vector3.UnitY;
+            var right = new Vector3(away.Y, -away.X, 0);
             for (var index = 0; index < digits.Length; index++)
             {
                 var offset = (index - (digits.Length - 1) / 2f) * .38f * scale;
@@ -200,10 +203,10 @@ public sealed class WorldRenderer : IDisposable
                         'e' => (-.16f, -.13f, false), 'f' => (-.16f, .13f, false),
                         _ => (0f, 0f, true)
                     };
-                    var center = new Vector3(cell.X + offset + x * scale, cell.Y + y * scale, cell.Z + .055f);
+                    var center = new Vector3(cell.X, cell.Y, cell.Z + .055f) + right * (offset + x * scale) + away * (y * scale);
                     var size = horizontal ? new Vector3(.30f * scale, .065f * scale, .07f) :
                         new Vector3(.065f * scale, .23f * scale, .07f);
-                    AddBox(center, size, color, false);
+                    AddPlaneBox(center, right, away, size, color);
                 }
             }
         }
@@ -215,6 +218,17 @@ public sealed class WorldRenderer : IDisposable
         '5' => "acdfg", '6' => "acdefg", '7' => "abc", '8' => "abcdefg", '9' => "abcdfg",
         _ => string.Empty
     };
+
+    private void AddPlaneBox(Vector3 center, Vector3 u, Vector3 v, Vector3 size, Color color)
+    {
+        var hu = u * size.X / 2f; var hv = v * size.Y / 2f; var hw = Vector3.UnitZ * size.Z / 2f;
+        var b00 = center - hu - hv - hw; var b10 = center + hu - hv - hw;
+        var b11 = center + hu + hv - hw; var b01 = center - hu + hv - hw;
+        var t00 = b00 + hw * 2; var t10 = b10 + hw * 2; var t11 = b11 + hw * 2; var t01 = b01 + hw * 2;
+        AddQuad(t00, t10, t11, t01, color, false);
+        AddQuad(b10, b11, t11, t10, Color.Multiply(color, .72f), false);
+        AddQuad(b01, b00, t00, t01, Color.Multiply(color, .58f), false);
+    }
 
     private (Vector3 Center, Vector3 U, Vector3 V, Vector3 Normal) MoveHintGeometry(
         TerrariumModel model, Int3 target, bool excavation)

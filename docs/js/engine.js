@@ -290,7 +290,9 @@ export class TerrariumModel {
 
   resolveGravity(events,releasedPawnId=null){
     for(let pass=0;pass<64;pass++){
-      let changed=this.resolveTerrainGravity(events);
+      // Piece falls resolve before secondary cave-ins. A shattered support cell
+      // becomes the survivor's new origin, so the next segment gets fresh damage.
+      let changed=false;
       outer:for(let x=0;x<8&&!changed;x++)for(let y=0;y<8&&!changed;y++){
         const column=this.pieces.filter(p=>p.position.x===x&&p.position.y===y).sort((a,b)=>a.position.z-b.position.z);
         for(const bottom of column){if(bottom.position.z===0||this.hasSupport(bottom.position,releasedPawnId))continue;const tower=[bottom];let nextZ=bottom.position.z+1;while(true){const above=column.find(p=>p.position.z===nextZ);if(!above)break;tower.push(above);nextZ++;}
@@ -305,6 +307,7 @@ export class TerrariumModel {
           if(releasedPawnId!=null&&tower.some(m=>m.id===releasedPawnId))releasedPawnId=null;changed=true;break outer;
         }
       }
+      if(!changed)changed=this.resolveTerrainGravity(events);
       if(!changed||this.winner)break;
     }
   }

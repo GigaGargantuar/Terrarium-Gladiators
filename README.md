@@ -120,6 +120,9 @@ piece will break it; otherwise it is red.
 - Unsupported drops of one cell are safe and allow pieces to form towers.
 - A drop of two or more cells is an impact: the first terrain cell shatters or
   the first piece is squashed.
+- If an impact punches through unsupported terrain, the destroyed cell becomes
+  the start of a new fall segment. Distance and damage reset there, then apply
+  normally to each later impact.
 - A piece falling four or more cells also perishes unless another piece breaks
   its fall.
 - Moving a piece carries every contiguous piece above it as a tower. If that

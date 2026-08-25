@@ -60,6 +60,10 @@ class MeshBuilder {
     this.quad(vec(mn.x,mn.y,mn.z),vec(mx.x,mn.y,mn.z),vec(mx.x,mn.y,mx.z),vec(mn.x,mn.y,mx.z),shade(col,.57),transparent);
     this.quad(vec(mx.x,mx.y,mn.z),vec(mn.x,mx.y,mn.z),vec(mn.x,mx.y,mx.z),vec(mx.x,mx.y,mx.z),shade(col,.68),transparent);
   }
+  planeBox(center,u,v,size,col){
+    const hu=mul(u,size.x/2),hv=mul(v,size.y/2),hw=vec(0,0,size.z/2),b00=sub(sub(sub(center,hu),hv),hw),b10=add(sub(sub(center,hv),hw),hu),b11=add(add(sub(center,hw),hu),hv),b01=add(sub(sub(center,hu),hw),hv),t00=add(b00,mul(hw,2)),t10=add(b10,mul(hw,2)),t11=add(b11,mul(hw,2)),t01=add(b01,mul(hw,2));
+    this.quad(t00,t10,t11,t01,col);this.quad(b01,b11,b10,b00,shade(col,.48));this.quad(b10,b11,t11,t10,shade(col,.72));this.quad(b01,b00,t00,t01,shade(col,.58));this.quad(b00,b10,t10,t00,shade(col,.57));this.quad(b11,b01,t01,t11,shade(col,.68));
+  }
   disc(center,radius,segments,col){for(let i=0;i<segments;i++){const a=i*TAU/segments,b=(i+1)*TAU/segments;this.tri(center,add(center,vec(Math.cos(a)*radius,Math.sin(a)*radius,0)),add(center,vec(Math.cos(b)*radius,Math.sin(b)*radius,0)),col,true)}}
   ring(center,radius,width,segments,col){for(let i=0;i<segments;i++){const a=i*TAU/segments,b=(i+1)*TAU/segments,p=(t,r)=>add(center,vec(Math.cos(t)*r,Math.sin(t)*r,0));this.quad(p(a,radius),p(b,radius),p(b,radius-width),p(a,radius-width),col,true)}}
   planeFrame(center,u,v,size,col,width,normal=cross(u,v)){
@@ -139,8 +143,8 @@ export class WorldRenderer {
     const glyphs={0:"abcdef",1:"bc",2:"abdeg",3:"abcdg",4:"bcfg",5:"acdfg",6:"acdefg",7:"abc",8:"abcdefg",9:"abcdfg"};
     const segments={a:[0,.25,1],b:[.16,.13,0],c:[.16,-.13,0],d:[0,-.25,1],e:[-.16,-.13,0],f:[-.16,.13,0],g:[0,0,1]};
     for(const encoded of model.revealedClues??[]){const[x,y,z]=encoded.split(",").map(Number),clue=model.clueAt({x,y,z});if(clue==null||(!this.layerFocus&&clue===0)||(this.layerFocus&&z!==this.focusLayer)||this.solid(solids,x,y,z))continue;
-      const digits=String(clue),scale=digits.length>1?.68:1,col=clue>=4?color(255,102,122):clue>=2?color(255,209,102):clue===0?color(54,115,119):color(127,255,240);
-      for(let index=0;index<digits.length;index++){const offset=(index-(digits.length-1)/2)*.38*scale;for(const id of glyphs[digits[index]]??[]){const[sx,sy,horizontal]=segments[id],center=vec(x+offset+sx*scale,y+sy*scale,z+.055),size=horizontal?vec(.30*scale,.065*scale,.07):vec(.065*scale,.23*scale,.07);mesh.box(center,size,col)}}
+      const digits=String(clue),scale=digits.length>1?.68:1,col=clue>=4?color(255,102,122):clue>=2?color(255,209,102):clue===0?color(54,115,119):color(127,255,240),away=norm(vec(x-this.camera.x,y-this.camera.y,0)),right=vec(away.y,-away.x,0);
+      for(let index=0;index<digits.length;index++){const offset=(index-(digits.length-1)/2)*.38*scale;for(const id of glyphs[digits[index]]??[]){const[sx,sy,horizontal]=segments[id],center=add(vec(x,y,z+.055),add(mul(right,offset+sx*scale),mul(away,sy*scale))),size=horizontal?vec(.30*scale,.065*scale,.07):vec(.065*scale,.23*scale,.07);mesh.planeBox(center,right,away,size,col)}}
     }
   }
   buildPiece(mesh,rendered,selected){
