@@ -105,8 +105,8 @@ piece will break it; otherwise it is red.
 - En passant is available only on the immediate reply to a two-square pawn
   move and captures the passed pawn at its actual elevation.
 - An unmoved King and Rook may castle on XY when they remain aligned on their
-  home rank and every cell between them is empty. Check restrictions are not
-  applied because this prototype does not enforce check.
+  home rank, every cell between them is empty, and the King is not under direct
+  attack on its starting, crossing, or destination cell on any movement plane.
 - A pawn reaching the enemy's far Y rank promotes at any elevation. Play pauses
   after landing so White can choose Queen, Rook, Bishop, Knight, or the pawn-only
   `(1,1,1)`-sliding Trishop; the bot chooses automatically. A pawn-origin piece
@@ -175,8 +175,8 @@ piece will break it; otherwise it is red.
 - When a flat solid 3×3 shelf has no solid cells anywhere in the 3×3 layer
   immediately beneath it, its center cell falls. Falling terrain squashes the
   first piece in its path, including a King.
-- Capturing or squashing a King wins. Check and checkmate constraints are not
-  enforced in this prototype.
+- Capturing or squashing a King wins. Outside castling's attacked-cell
+  restriction, check and checkmate constraints are not enforced in this prototype.
 
 The world renderer uses true 3D geometry rather than screen-space isometric
 tiles. Its perspective camera begins side-aligned at 45 degrees, supports

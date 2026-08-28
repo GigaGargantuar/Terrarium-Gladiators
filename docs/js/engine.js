@@ -149,7 +149,7 @@ export class TerrariumModel {
   isSolid(p) { return TerrariumModel.isInside(p) && this.solidAt(p.x, p.y, p.z); }
   isEmpty(p) { return TerrariumModel.isInside(p) && !this.isSolid(p) && !this.pieceAt(p); }
 
-  legalMoves(piece = this.selected) {
+  legalMoves(piece = this.selected, includeCastling = true) {
     if (!piece || this.winner) return [];
     const result = [];
     const [a, b] = this.planeAxes(this.plane);
@@ -160,7 +160,7 @@ export class TerrariumModel {
     else if(piece.kind===Kind.TRISHOP)this.addSliding(piece,result,tri);
     else if (piece.kind === Kind.KING) {
       this.addStepping(piece, result, [a,mul(a,-1),b,mul(b,-1),add(a,b),add(a,mul(b,-1)),add(mul(a,-1),b),add(mul(a,-1),mul(b,-1)),...(piece.promoted?tri:[])]);
-      this.addCastlingMoves(piece, result);
+      if (includeCastling) this.addCastlingMoves(piece, result);
     } else if (piece.kind === Kind.KNIGHT) {
       this.addStepping(piece, result, [add(mul(a,2),b),add(mul(a,2),mul(b,-1)),add(mul(a,-2),b),add(mul(a,-2),mul(b,-1)),add(mul(b,2),a),add(mul(b,2),mul(a,-1)),add(mul(b,-2),a),add(mul(b,-2),mul(a,-1)),...(piece.promoted?this.spaceKnightOffsets():[])]);
     } else this.addPawnMoves(piece, result);
@@ -269,8 +269,10 @@ export class TerrariumModel {
   addCastlingMoves(king, result) {
     if (this.plane!==Plane.XY || king.hasMoved || king.position.x!==4) return;
     const homeRank=king.side===Side.WHITE?0:7; if(king.position.y!==homeRank)return;
-    for(const direction of [-1,1]){const rookX=direction<0?0:7,rook=this.pieceAt(v(rookX,king.position.y,king.position.z));if(!rook||rook.kind!==Kind.ROOK||rook.side!==king.side||rook.hasMoved)continue;let clear=true;for(let x=king.position.x+direction;x!==rookX;x+=direction)if(!this.isEmpty(v(x,king.position.y,king.position.z))){clear=false;break;}const destination=add(king.position,v(direction*2,0,0));if(clear&&this.isEmpty(destination))result.push(destination);}
+    if(this.isKingAttackedAt(king,king.position))return;
+    for(const direction of [-1,1]){const rookX=direction<0?0:7,rook=this.pieceAt(v(rookX,king.position.y,king.position.z));if(!rook||rook.kind!==Kind.ROOK||rook.side!==king.side||rook.hasMoved)continue;let clear=true;for(let x=king.position.x+direction;x!==rookX;x+=direction)if(!this.isEmpty(v(x,king.position.y,king.position.z))){clear=false;break;}const crossing=add(king.position,v(direction,0,0)),destination=add(king.position,v(direction*2,0,0));if(clear&&this.isEmpty(destination)&&!this.isKingAttackedAt(king,crossing)&&!this.isKingAttackedAt(king,destination))result.push(destination);}
   }
+  isKingAttackedAt(king,position){const originalPosition=king.position,originalPlane=this.plane;king.position=position;try{for(const plane of planes){this.plane=plane;for(const opponent of this.pieces)if(opponent.side!==king.side&&this.legalMoves(opponent,false).some(target=>eq(target,position)))return true}return false}finally{king.position=originalPosition;this.plane=originalPlane}}
   addSliding(piece,result,directions){const carriedIds=this.upwardCarriedIds(piece);for(const direction of directions){for(let distance=1;distance<16;distance++){const target=add(piece.position,mul(direction,distance));if(!TerrariumModel.isInside(target))break;if(this.isSolid(target)){if(this.canExcavate(piece,target))result.push(target);break;}const occupant=this.pieceAt(target);if(!occupant||carriedIds.has(occupant.id)){result.push(target);continue;}if(occupant.side!==piece.side)result.push(target);break;}}}
   addStepping(piece,result,offsets){const carriedIds=this.upwardCarriedIds(piece);for(const offset of offsets){const target=add(piece.position,offset);if(!TerrariumModel.isInside(target))continue;if(this.isSolid(target)){if(this.canExcavate(piece,target))result.push(target);continue;}const occupant=this.pieceAt(target);if(!occupant||carriedIds.has(occupant.id)||occupant.side!==piece.side)result.push(target);}}
 

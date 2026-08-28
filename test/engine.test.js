@@ -43,6 +43,40 @@ test("moves switch turns and undo restores the complete position", () => {
   assert.equal(game.pieceAt({ x:4, y:1, z:8 })?.id, pawn.id);
 });
 
+test("castling remains available when the king's path is not attacked", () => {
+  const king=tacticalPiece(1,Side.WHITE,Kind.KING,4,0);king.hasMoved=false;
+  const rook=tacticalPiece(2,Side.WHITE,Kind.ROOK,7,0);rook.hasMoved=false;
+  const game=tacticalPosition([
+    king,rook,tacticalPiece(3,Side.BLACK,Kind.KING,0,7),
+  ],Side.WHITE);
+
+  const destination={x:6,y:0,z:0};
+  assert.ok(game.legalMoves(king).some(move=>move.x===6&&move.y===0&&move.z===0));
+  game.select(king.id);
+  assert.equal(game.tryMove(destination),true);
+  assert.deepEqual(game.pieceAt(destination)?.id,king.id);
+  assert.deepEqual(game.pieceAt({x:5,y:0,z:0})?.id,rook.id);
+});
+
+test("castling is disallowed while in check or through an attacked cell", () => {
+  const attacks=[
+    [Kind.ROOK,4,7,0,"starting cell"],
+    [Kind.ROOK,5,7,0,"crossing cell"],
+    [Kind.ROOK,6,7,0,"destination cell"],
+    [Kind.ROOK,5,0,4,"crossing cell from another movement plane"],
+    [Kind.PAWN,4,1,0,"crossing cell attacked by a pawn"],
+    [Kind.KNIGHT,3,1,0,"crossing cell attacked by a knight"],
+  ];
+  for(const [kind,x,y,z,label] of attacks){
+    const king=tacticalPiece(1,Side.WHITE,Kind.KING,4,0);king.hasMoved=false;
+    const rook=tacticalPiece(2,Side.WHITE,Kind.ROOK,7,0);rook.hasMoved=false;
+    const game=tacticalPosition([
+      king,rook,tacticalPiece(3,Side.BLACK,Kind.KING,0,7),tacticalPiece(4,Side.BLACK,kind,x,y,z),
+    ],Side.WHITE);
+    assert.equal(game.legalMoves(king).some(move=>move.x===6&&move.y===0&&move.z===0),false,label);
+  }
+});
+
 test("movement plane rotates knight offsets into XZ", () => {
   const game = new TerrariumModel();
   const knight = game.pieces.find(piece => piece.side === Side.WHITE && piece.kind === Kind.KNIGHT && piece.position.x === 1);

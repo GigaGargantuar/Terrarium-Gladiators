@@ -288,7 +288,9 @@ public sealed class TerrariumModel
 
     internal void SetMessage(string message) => Message = message;
 
-    public IReadOnlyList<Int3> LegalMoves(ChessPiece? piece = null)
+    public IReadOnlyList<Int3> LegalMoves(ChessPiece? piece = null) => LegalMoves(piece, true);
+
+    private IReadOnlyList<Int3> LegalMoves(ChessPiece? piece, bool includeCastling)
     {
         piece ??= Selected;
         if (piece is null || Winner is not null) return Array.Empty<Int3>();
@@ -324,7 +326,7 @@ public sealed class TerrariumModel
                     a + b, a + b * -1, a * -1 + b, a * -1 + b * -1
                 ]);
                 if (piece.Promoted) AddStepping(piece, result, tri);
-                AddCastlingMoves(piece, result);
+                if (includeCastling) AddCastlingMoves(piece, result);
                 break;
             case PieceKind.Knight:
                 AddStepping(piece, result,
@@ -585,6 +587,7 @@ public sealed class TerrariumModel
         if (Plane != MovementPlane.XY || king.HasMoved || king.Position.X != 4) return;
         var homeRank = king.Side == Side.White ? 0 : 7;
         if (king.Position.Y != homeRank) return;
+        if (IsKingAttackedAt(king, king.Position)) return;
 
         foreach (var direction in new[] { -1, 1 })
         {
@@ -599,8 +602,34 @@ public sealed class TerrariumModel
                 if (!IsEmpty(cell)) { clear = false; break; }
             }
             if (!clear) continue;
+            var crossing = king.Position + new Int3(direction, 0, 0);
             var destination = king.Position + new Int3(direction * 2, 0, 0);
-            if (IsEmpty(destination)) result.Add(destination);
+            if (IsEmpty(destination) &&
+                !IsKingAttackedAt(king, crossing) &&
+                !IsKingAttackedAt(king, destination))
+                result.Add(destination);
+        }
+    }
+
+    private bool IsKingAttackedAt(ChessPiece king, Int3 position)
+    {
+        var originalPosition = king.Position;
+        var originalPlane = Plane;
+        king.Position = position;
+        try
+        {
+            foreach (var plane in Enum.GetValues<MovementPlane>())
+            {
+                Plane = plane;
+                foreach (var opponent in Pieces.Where(piece => piece.Side != king.Side))
+                    if (LegalMoves(opponent, false).Contains(position)) return true;
+            }
+            return false;
+        }
+        finally
+        {
+            king.Position = originalPosition;
+            Plane = originalPlane;
         }
     }
 
