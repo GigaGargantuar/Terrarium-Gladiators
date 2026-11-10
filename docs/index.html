@@ -8,7 +8,7 @@
   <title>Terrarium Gladiators</title>
   <link rel="icon" href="assets/icon.svg" type="image/svg+xml">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="stylesheet" href="styles.css?v=bot-knowledge">
+  <link rel="stylesheet" href="styles.css?v=p2p">
 </head>
 <body>
   <a class="skip-link" href="#board">Skip to the arena</a>
@@ -32,9 +32,14 @@
           <option value="pvp">SAME-DEVICE PVP</option>
           <option value="pvbot" selected>PLAYER VS BOT</option>
           <option value="botvbot">BOT VS BOT</option>
+          <option value="p2p">P2P MULTIPLAYER</option>
         </select>
         <label class="addon-toggle"><input id="minesweeper-toggle" type="checkbox"> MINESWEEPER ADDON</label>
         <label id="bot-marks-toggle-row" class="addon-toggle" hidden><input id="bot-marks-toggle" type="checkbox" checked> SHOW BOT MARKERS</label>
+        <div id="network-tools" class="network-tools" hidden>
+          <p id="network-summary" role="status">Waiting for a peer.</p>
+          <button id="network-leave-button">LEAVE MATCH</button>
+        </div>
       </section>
 
       <section class="turn-block">
@@ -119,6 +124,41 @@
     </div>
   </dialog>
 
-  <script type="module" src="js/app.js"></script>
+  <dialog id="multiplayer-dialog" aria-labelledby="multiplayer-title">
+    <div class="multiplayer-shell">
+      <button id="multiplayer-close" class="dialog-close" aria-label="Close multiplayer setup">×</button>
+      <p class="eyebrow">DIRECT PEER CONNECTION</p>
+      <h2 id="multiplayer-title">Play across two browsers</h2>
+      <p class="multiplayer-intro">The browsers connect directly. Share the invite and response codes through a private channel. This static game has no matchmaking or relay server. Minesweeper is disabled in P2P matches to keep its hidden minefield private.</p>
+      <div id="peer-start" class="peer-actions">
+        <button id="host-game-button" class="primary-button">HOST AS WHITE</button>
+        <button id="join-game-button" class="primary-button">JOIN AS BLACK</button>
+      </div>
+
+      <section id="host-connection" class="peer-stage" hidden>
+        <label for="peer-invite-code">1. Send this invite code to your opponent</label>
+        <textarea id="peer-invite-code" readonly spellcheck="false" aria-label="P2P invite code"></textarea>
+        <button id="copy-invite-button" class="copy-code-button">COPY INVITE</button>
+        <label for="peer-response-input">2. Paste their response code here</label>
+        <textarea id="peer-response-input" spellcheck="false" placeholder="Paste the response code"></textarea>
+        <button id="accept-response-button" class="primary-button">CONNECT</button>
+      </section>
+
+      <section id="join-connection" class="peer-stage" hidden>
+        <label for="peer-host-input">1. Paste the host invite code</label>
+        <textarea id="peer-host-input" spellcheck="false" placeholder="Paste the host invite code"></textarea>
+        <button id="create-response-button" class="primary-button">CONNECT &amp; MAKE RESPONSE</button>
+        <label for="peer-response-code">2. Send this response code to the host</label>
+        <textarea id="peer-response-code" readonly spellcheck="false" aria-label="P2P response code"></textarea>
+        <button id="copy-response-button" class="copy-code-button">COPY RESPONSE</button>
+      </section>
+
+      <p id="multiplayer-status" class="multiplayer-status" role="status">Choose whether to host or join.</p>
+      <p class="multiplayer-footnote">Both players need HTTPS or localhost. Some network types may block a direct connection.</p>
+      <button id="multiplayer-return-button" class="primary-button" hidden>RETURN TO THE ARENA</button>
+    </div>
+  </dialog>
+
+  <script type="module" src="js/app.js?v=p2p"></script>
 </body>
 </html>

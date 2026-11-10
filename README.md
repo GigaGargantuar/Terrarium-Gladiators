@@ -21,6 +21,15 @@ python -m http.server 8080
 Then visit `http://localhost:8080/docs/`. Opening `index.html` directly is not
 recommended because browser module security rules differ for `file://` URLs.
 
+The browser edition supports direct P2P matches. Choose **P2P Multiplayer**, then
+have one player host as White and the other join as Black. Exchange the invite and
+response codes through a private channel; after setup, moves travel directly between
+the browsers over WebRTC. The site does not run matchmaking or a relay server, so
+both players need a secure page (HTTPS or localhost), and some network configurations
+may prevent a direct connection. Minesweeper is disabled in P2P matches so its hidden
+minefield is not included in the connection codes. P2P is currently available in the
+browser edition; the MonoGame desktop app keeps its local play modes.
+
 Deployment is configured in [`.github/workflows/pages.yml`](.github/workflows/pages.yml).
 
 **Required one-time setup:** before the first deployment, open the repository's
@@ -48,8 +57,9 @@ dotnet run
 ```
 
 Click a piece, choose its movement plane, then click a highlighted destination.
-Choose same-device PvP, Player vs Bot (White player), or Bot vs Bot from the
-mode selector. The bot searches one reply deep, evaluates material and piece
+In the desktop app, choose same-device PvP, Player vs Bot (White player), or Bot
+vs Bot from the mode selector. The browser edition also offers P2P Multiplayer,
+described above. The bot searches one reply deep, evaluates material and piece
 activity, takes mate in one, and avoids allowing an opponent mate in one
 whenever a safe move exists. It always analyzes direct capture replies and
 strongly penalizes lines that lose more of its own material than they take, so

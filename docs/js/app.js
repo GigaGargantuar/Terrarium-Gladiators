@@ -1,16 +1,19 @@
 import { TerrariumModel, Side, Kind, Plane, prepareBotTurn } from "./engine.js";
 import { WorldRenderer } from "./webgl-renderer.js";
+import { PeerSession } from "./p2p.js";
 
 const model=new TerrariumModel(),canvas=document.querySelector("#board"),renderer=new WorldRenderer(canvas);
-const ui={turn:document.querySelector("#turn-label"),message:document.querySelector("#message"),selected:document.querySelector("#selected-piece"),planes:[...document.querySelectorAll("[data-plane]")],mode:document.querySelector("#mode-select"),role:document.querySelector("#role-note"),mine:document.querySelector("#minesweeper-toggle"),botMarksRow:document.querySelector("#bot-marks-toggle-row"),botMarks:document.querySelector("#bot-marks-toggle"),scout:document.querySelector("#scout-controls"),scoutPattern:document.querySelector("#scout-pattern"),scoutButton:document.querySelector("#scout-button"),layer:document.querySelector("#layer-toggle"),depth:document.querySelector("#depth-slider"),depthOut:document.querySelector("#depth-output"),camera:document.querySelector("#camera-readout"),help:document.querySelector("#help-dialog"),promotion:document.querySelector("#promotion-dialog"),thinking:document.querySelector("#thinking"),deselect:document.querySelector(".deselect-note")};
+const ui={turn:document.querySelector("#turn-label"),message:document.querySelector("#message"),selected:document.querySelector("#selected-piece"),planes:[...document.querySelectorAll("[data-plane]")],mode:document.querySelector("#mode-select"),role:document.querySelector("#role-note"),mine:document.querySelector("#minesweeper-toggle"),botMarksRow:document.querySelector("#bot-marks-toggle-row"),botMarks:document.querySelector("#bot-marks-toggle"),scout:document.querySelector("#scout-controls"),scoutPattern:document.querySelector("#scout-pattern"),scoutButton:document.querySelector("#scout-button"),layer:document.querySelector("#layer-toggle"),depth:document.querySelector("#depth-slider"),depthOut:document.querySelector("#depth-output"),camera:document.querySelector("#camera-readout"),help:document.querySelector("#help-dialog"),promotion:document.querySelector("#promotion-dialog"),thinking:document.querySelector("#thinking"),deselect:document.querySelector(".deselect-note"),sidebar:document.querySelector(".sidebar"),networkTools:document.querySelector("#network-tools"),networkSummary:document.querySelector("#network-summary"),networkLeave:document.querySelector("#network-leave-button"),multiplayer:document.querySelector("#multiplayer-dialog"),multiplayerStatus:document.querySelector("#multiplayer-status"),multiplayerClose:document.querySelector("#multiplayer-close"),peerStart:document.querySelector("#peer-start"),hostStage:document.querySelector("#host-connection"),joinStage:document.querySelector("#join-connection"),hostButton:document.querySelector("#host-game-button"),joinButton:document.querySelector("#join-game-button"),inviteCode:document.querySelector("#peer-invite-code"),responseInput:document.querySelector("#peer-response-input"),hostInput:document.querySelector("#peer-host-input"),responseCode:document.querySelector("#peer-response-code"),copyInvite:document.querySelector("#copy-invite-button"),copyResponse:document.querySelector("#copy-response-button"),acceptResponse:document.querySelector("#accept-response-button"),createResponse:document.querySelector("#create-response-button"),multiplayerReturn:document.querySelector("#multiplayer-return-button"),undo:document.querySelector("#undo-button"),restart:document.querySelector("#restart-button")};
 let botWorker=null,botTimer=null,positionVersion=0,dirty=true,lastTime=performance.now(),pointerStart=null,pointerLast=null,dragging=false;
-const MatchMode=Object.freeze({PVP:"pvp",PVBOT:"pvbot",BOTVBOT:"botvbot"});
+const MatchMode=Object.freeze({PVP:"pvp",PVBOT:"pvbot",BOTVBOT:"botvbot",P2P:"p2p"});
 let matchMode=MatchMode.PVBOT,falls=[],terrainBreaks=[],pieceRemovals=[],preImpactSolids=null,preImpactMines=null,preImpactClues=null,preImpactPieces=null,impactTime=0,transitionElapsed=0,pendingBot=false;
+let p2pPreviousMode=MatchMode.PVBOT,p2pLocalSide=null,p2pConnected=false,p2pPeerReady=false,p2pStatus="Choose whether to host or join.",p2pSequence=0,p2pSetupVersion=0,pendingPeerMessages=[];
+const peerSession=new PeerSession(handlePeerMessage,handlePeerState);
 const clonePieces=pieces=>pieces.map(p=>({...p,position:{...p.position}}));
 const same=(a,b)=>a&&b&&a.x===b.x&&a.y===b.y&&a.z===b.z;
 const lerp=(a,b,t)=>a+(b-a)*t;
 const isBotTurn=()=>matchMode===MatchMode.BOTVBOT||(matchMode===MatchMode.PVBOT&&model.turn===Side.BLACK);
-const isHumanTurn=()=>!isBotTurn();
+const isHumanTurn=()=>matchMode===MatchMode.P2P?p2pConnected&&p2pPeerReady&&model.turn===p2pLocalSide:!isBotTurn();
 const sideName=side=>side.toUpperCase();
 const layerLabel=()=>`Z${String(renderer.focusLayer).padStart(2,"0")}–${String(renderer.focusLayer+1).padStart(2,"0")}`;
 
@@ -57,20 +60,21 @@ function renderPieces(){
   if(preImpactPieces){const animatedIds=new Set(falls.map(a=>a.fall.pieceId));for(const piece of preImpactPieces)if(!finalIds.has(piece.id)&&!animatedIds.has(piece.id))result.push({piece,position:{...piece.position},opacity:1})}
   return result;
 }
-function finishTransition(){preImpactSolids=null;preImpactMines=null;preImpactClues=null;preImpactPieces=null;falls=[];terrainBreaks=[];pieceRemovals=[];dirty=true;syncUI();if(pendingBot&&isBotTurn()&&!model.winner&&model.pendingPromotionPieceId==null){pendingBot=false;queueBot()}}
+function finishTransition(){preImpactSolids=null;preImpactMines=null;preImpactClues=null;preImpactPieces=null;falls=[];terrainBreaks=[];pieceRemovals=[];dirty=true;syncUI();drainPeerMessages();if(pendingBot&&isBotTurn()&&!model.winner&&model.pendingPromotionPieceId==null){pendingBot=false;queueBot()}}
 function updateTransition(dt){if(!transitionActive())return;transitionElapsed+=dt;for(const change of terrainBreaks)if(!change.applied&&transitionElapsed>=change.at){change.applied=true;const index=model.solidIndex(change.cell.x,change.cell.y,change.cell.z);preImpactSolids[index]=change.solid?1:0;preImpactClues?.add(`${change.cell.x},${change.cell.y},${change.cell.z}`);if(preImpactMines&&preImpactMines[index]!==model.mines[index]){preImpactMines[index]=model.mines[index];for(let dx=-1;dx<=1;dx++)for(let dy=-1;dy<=1;dy++)for(let dz=-1;dz<=1;dz++)preImpactClues?.add(`${change.cell.x+dx},${change.cell.y+dy},${change.cell.z+dz}`)}}for(const removal of pieceRemovals)if(!removal.applied&&transitionElapsed>=removal.at){removal.applied=true;preImpactPieces=preImpactPieces?.filter(piece=>piece.id!==removal.pieceId)??null}impactTime-=dt;if(impactTime<=0)finishTransition();dirty=true}
 
 function syncUI(){
-  const botThinking=!ui.thinking.hidden;ui.turn.textContent=model.winner?`${sideName(model.winner)} WINS`:botThinking?`${sideName(model.turn)} BOT THINKING`:`${sideName(model.turn)} TO MOVE`;ui.turn.classList.toggle("black",model.turn===Side.BLACK&&!model.winner);
+  const botThinking=!ui.thinking.hidden,p2pWaiting=matchMode===MatchMode.P2P&&(!p2pConnected||!p2pPeerReady);ui.turn.textContent=model.winner?`${sideName(model.winner)} WINS`:p2pWaiting?"P2P NOT CONNECTED":botThinking?`${sideName(model.turn)} BOT THINKING`:`${sideName(model.turn)} TO MOVE`;ui.turn.classList.toggle("black",model.turn===Side.BLACK&&!model.winner);
   ui.message.textContent=model.message;const piece=model.selected,promotionStatus=piece?.promoted?" ✦ TRUE 3D":piece?.pawnOrigin?" ↩ RETURN HOME":"";ui.selected.textContent=piece?`${piece.kind}${promotionStatus}  ·  ${TerrariumModel.cellName(piece.position)}`:"No piece selected";
   ui.thinking.innerHTML=`<i></i> ${sideName(model.turn)} BOT THINKING`;
-  ui.role.textContent=matchMode===MatchMode.PVP?"Same-device PvP · pass control each turn":matchMode===MatchMode.BOTVBOT?"Bot vs Bot · spectator mode":"You are White · Black is the bot";
-  ui.deselect.textContent=model.minesweeperEnabled?"Empty cell: LMB safe · RMB flag":"Right-click to deselect";
+  ui.role.textContent=matchMode===MatchMode.P2P?(p2pPeerReady?`Direct P2P · You are ${sideName(p2pLocalSide)}`:`P2P multiplayer · ${p2pStatus}`):matchMode===MatchMode.PVP?"Same-device PvP · pass control each turn":matchMode===MatchMode.BOTVBOT?"Bot vs Bot · spectator mode":"You are White · Black is the bot";
+  ui.deselect.textContent=matchMode===MatchMode.P2P?"P2P moves are sent directly between browsers":model.minesweeperEnabled?"Empty cell: LMB safe · RMB flag":"Right-click to deselect";
   ui.botMarksRow.hidden=!model.minesweeperEnabled;
+  ui.mine.disabled=matchMode===MatchMode.P2P;ui.undo.disabled=matchMode===MatchMode.P2P;ui.mode.disabled=matchMode===MatchMode.P2P;ui.networkTools.hidden=matchMode!==MatchMode.P2P;ui.sidebar.classList.toggle("network-active",matchMode===MatchMode.P2P);ui.networkSummary.textContent=p2pStatus;ui.networkLeave.hidden=matchMode!==MatchMode.P2P;ui.multiplayerReturn.hidden=!p2pConnected;
   for(const button of ui.planes)button.setAttribute("aria-checked",String(button.dataset.plane===model.plane));
   const patterns=model.minesweeperEnabled&&piece?model.scoutPatterns(piece):[],previous=ui.scoutPattern.value;ui.scout.hidden=!patterns.length;ui.scoutPattern.replaceChildren(...patterns.map(pattern=>{const option=document.createElement("option");option.value=pattern;option.textContent=pattern.replaceAll("-"," ").toUpperCase();return option}));if(patterns.includes(previous))ui.scoutPattern.value=previous;
   ui.camera.textContent=`TRUE 3D / ${Math.round(renderer.elevation).toString().padStart(2,"0")}° / ZOOM ${Math.round(renderer.zoom*100).toString().padStart(3,"0")}%`;
-  if(model.pendingPromotionPieceId!=null&&isHumanTurn()&&!transitionActive()&&!ui.promotion.open)ui.promotion.showModal();dirty=true;
+  if(model.pendingPromotionPieceId!=null&&isHumanTurn()&&!transitionActive()&&!ui.promotion.open)ui.promotion.showModal();else if(ui.promotion.open&&!isHumanTurn())ui.promotion.close();dirty=true;
 }
 function draw(){
   renderer.render(model,preImpactSolids??model.solids,renderPieces(),transitionActive()?[]:model.selected?model.legalMoves():[],preImpactMines??model.mines,preImpactClues??model.revealedClues,ui.botMarks.checked);dirty=false;
@@ -80,20 +84,78 @@ requestAnimationFrame(frame);new ResizeObserver(()=>{dirty=true}).observe(canvas
 
 function setPlane(plane){if(!isHumanTurn()||model.winner||model.pendingPromotionPieceId!=null||transitionActive())return;model.setPlane(plane);syncUI()}
 function cyclePiece(backward=false){if(!isHumanTurn()||transitionActive())return;const pieces=model.pieces.filter(p=>p.side===model.turn).sort((a,b)=>a.id-b.id);if(!pieces.length)return;let i=pieces.findIndex(p=>p.id===model.selectedId);i=(i+(backward?-1:1)+pieces.length)%pieces.length;model.select(pieces[i].id);syncUI()}
-function reset(){clearTimeout(botTimer);pendingBot=false;preImpactSolids=null;preImpactMines=null;preImpactClues=null;preImpactPieces=null;falls=[];terrainBreaks=[];pieceRemovals=[];matchMode=MatchMode.PVBOT;ui.mode.value=matchMode;model.reset();positionVersion++;startBotWorker();ui.thinking.hidden=true;if(ui.promotion.open)ui.promotion.close();syncUI();if(isBotTurn())queueBot()}
+function reset(){if(matchMode===MatchMode.P2P)closeP2P("You left the P2P match.");clearTimeout(botTimer);pendingBot=false;preImpactSolids=null;preImpactMines=null;preImpactClues=null;preImpactPieces=null;falls=[];terrainBreaks=[];pieceRemovals=[];matchMode=MatchMode.PVBOT;ui.mode.value=matchMode;ui.mine.checked=model.minesweeperEnabled;model.reset();positionVersion++;startBotWorker();ui.thinking.hidden=true;if(ui.promotion.open)ui.promotion.close();if(ui.multiplayer.open)ui.multiplayer.close();syncUI();if(isBotTurn())queueBot()}
 function setMatchMode(mode){
-  if(matchMode===mode)return;clearTimeout(botTimer);pendingBot=false;matchMode=mode;positionVersion++;startBotWorker();ui.thinking.hidden=true;
+  if(matchMode===mode)return;const priorMode=matchMode;if(priorMode===MatchMode.P2P)closeP2P("P2P connection closed.");clearTimeout(botTimer);pendingBot=false;matchMode=mode;positionVersion++;startBotWorker();ui.thinking.hidden=true;
+  if(mode===MatchMode.P2P){p2pPreviousMode=priorMode;p2pLocalSide=null;p2pConnected=false;p2pPeerReady=false;p2pSequence=0;pendingPeerMessages=[];p2pStatus="Choose whether to host or join.";resetPeerDialog();ui.multiplayer.showModal();syncUI();return}
   if(model.pendingPromotionPieceId!=null&&isBotTurn()){model.promote(Kind.QUEEN);if(ui.promotion.open)ui.promotion.close();positionVersion++;}
   syncUI();if(transitionActive())pendingBot=isBotTurn()&&!model.winner;else if(isBotTurn())queueBot();
 }
-function undo(){if(transitionActive())return;clearTimeout(botTimer);pendingBot=false;ui.thinking.hidden=true;if(!model.undo())return;if(matchMode===MatchMode.PVBOT&&model.turn===Side.BLACK&&!model.winner)model.undo();positionVersion++;startBotWorker();syncUI();if(isBotTurn())queueBot()}
+function undo(){if(matchMode===MatchMode.P2P||transitionActive())return;clearTimeout(botTimer);pendingBot=false;ui.thinking.hidden=true;if(!model.undo())return;if(matchMode===MatchMode.PVBOT&&model.turn===Side.BLACK&&!model.winner)model.undo();positionVersion++;startBotWorker();syncUI();if(isBotTurn())queueBot()}
+function setP2PStatus(message,error=false){p2pStatus=message;ui.multiplayerStatus.textContent=message;ui.multiplayerStatus.classList.toggle("error",error);ui.networkSummary.textContent=message}
+function resetPeerDialog(){ui.peerStart.hidden=false;ui.hostStage.hidden=true;ui.joinStage.hidden=true;ui.multiplayerReturn.hidden=true;ui.inviteCode.value="";ui.responseInput.value="";ui.hostInput.value="";ui.responseCode.value="";ui.acceptResponse.disabled=false;ui.createResponse.disabled=false;ui.hostButton.disabled=false;ui.joinButton.disabled=false;setP2PStatus("Choose whether to host or join.")}
+function clearPeerTransitions(){preImpactSolids=null;preImpactMines=null;preImpactClues=null;preImpactPieces=null;falls=[];terrainBreaks=[];pieceRemovals=[];impactTime=0;transitionElapsed=0}
+function startP2PBoard(side){clearTimeout(botTimer);pendingBot=false;clearPeerTransitions();model.setMinesweeperEnabled(false);ui.mine.checked=false;p2pLocalSide=side;p2pSequence=0;pendingPeerMessages=[];positionVersion++;ui.thinking.hidden=true;if(ui.promotion.open)ui.promotion.close();syncUI()}
+function showPeerSetup(stage){ui.peerStart.hidden=true;ui.hostStage.hidden=stage!=="host";ui.joinStage.hidden=stage!=="join";ui.multiplayerReturn.hidden=true;ui.acceptResponse.disabled=false;ui.createResponse.disabled=false}
+async function hostP2P(){
+  const setupVersion=++p2pSetupVersion;
+  showPeerSetup("host");startP2PBoard(Side.WHITE);setP2PStatus("Preparing a direct invite. This can take a few seconds.");ui.hostButton.disabled=true;ui.joinButton.disabled=true;
+  try{ui.inviteCode.value=await peerSession.createInvite();if(matchMode!==MatchMode.P2P||setupVersion!==p2pSetupVersion)return;setP2PStatus("Invite ready. Send it to your opponent, then paste their response below.")}
+  catch(error){if(matchMode!==MatchMode.P2P||setupVersion!==p2pSetupVersion)return;ui.peerStart.hidden=false;ui.hostStage.hidden=true;ui.joinStage.hidden=true;setP2PStatus(error.message||"Could not create an invite.",true);ui.hostButton.disabled=false;ui.joinButton.disabled=false}
+}
+function chooseJoinP2P(){showPeerSetup("join");ui.hostInput.focus();setP2PStatus("Paste the host invite to create your response code.")}
+async function createP2PResponse(){
+  const setupVersion=++p2pSetupVersion;
+  showPeerSetup("join");setP2PStatus("Reading the invite and finding a direct network path.");ui.createResponse.disabled=true;ui.hostButton.disabled=true;ui.joinButton.disabled=true;
+  try{const answer=await peerSession.createResponse(ui.hostInput.value);if(matchMode!==MatchMode.P2P||setupVersion!==p2pSetupVersion)return;startP2PBoard(Side.BLACK);ui.responseCode.value=answer;setP2PStatus("Response ready. Send it to the host and wait for the connection.")}
+  catch(error){if(matchMode!==MatchMode.P2P||setupVersion!==p2pSetupVersion)return;setP2PStatus(error.message||"Could not create a response.",true);ui.createResponse.disabled=false;ui.hostButton.disabled=false;ui.joinButton.disabled=false}
+}
+async function acceptP2PResponse(){setP2PStatus("Connecting directly to the guest.");ui.acceptResponse.disabled=true;try{await peerSession.acceptResponse(ui.responseInput.value);if(!p2pConnected)setP2PStatus("Waiting for the direct connection…")}catch(error){setP2PStatus(error.message||"Could not accept that response code.",true);ui.acceptResponse.disabled=false}}
+async function copyPeerCode(textarea,button,label){if(!textarea.value)return;try{await navigator.clipboard.writeText(textarea.value);button.textContent="COPIED"}catch{textarea.focus();textarea.select();document.execCommand("copy");button.textContent="COPIED"}setTimeout(()=>{button.textContent=label},1200)}
+function cancelP2PSetup(){if(p2pConnected)return;p2pSetupVersion++;peerSession.close();pendingPeerMessages=[];p2pLocalSide=null;p2pPeerReady=false;matchMode=p2pPreviousMode;ui.mode.value=matchMode;if(ui.multiplayer.open)ui.multiplayer.close();setP2PStatus("Choose whether to host or join.");syncUI();if(transitionActive())pendingBot=isBotTurn()&&!model.winner;else if(isBotTurn())queueBot()}
+function closeP2P(reason="P2P connection closed."){p2pSetupVersion++;if(peerSession.channel?.readyState==="open")peerSession.send({type:"leave"});peerSession.close();p2pConnected=false;p2pPeerReady=false;p2pLocalSide=null;p2pSequence=0;pendingPeerMessages=[];setP2PStatus(reason)}
+function sendP2PAction(action){if(!p2pConnected||!p2pPeerReady)return false;const message={...action,sequence:p2pSequence+1};if(!peerSession.send(message)){setP2PStatus("Connection lost. Leave the match or reconnect.",true);p2pConnected=false;p2pPeerReady=false;peerSession.close();syncUI();return false}p2pSequence=message.sequence;return true}
+function handlePeerState(state){
+  if(state==="connected"){p2pConnected=true;p2pPeerReady=false;setP2PStatus("Direct link established. Checking game version…");peerSession.send({type:"hello",protocol:1,side:p2pLocalSide});syncUI();return}
+  if(state==="connecting"){setP2PStatus("Waiting for the direct connection…");return}
+  if(state==="disconnected"){if(matchMode!==MatchMode.P2P)return;p2pConnected=false;p2pPeerReady=false;pendingPeerMessages=[];setP2PStatus("Connection lost. Leave the match to return to local play.",true);model.setMessage("The P2P connection ended.");syncUI();return}
+  if(state==="invalid-message")failP2P("The peer sent an invalid message. Leave the match to reset.");
+}
+function handlePeerMessage(message){
+  if(!message||typeof message!=="object")return;
+  if(message.type==="leave"){p2pConnected=false;p2pPeerReady=false;pendingPeerMessages=[];peerSession.close();setP2PStatus("Your opponent left the match.",true);model.setMessage("Your opponent left the P2P match.");syncUI();return}
+  if(matchMode!==MatchMode.P2P||!p2pConnected)return;
+  if(message.type==="hello"){const remoteSide=p2pLocalSide===Side.WHITE?Side.BLACK:Side.WHITE;if(message.protocol!==1||message.side!==remoteSide){failP2P("The peer is using a different game protocol. Start a new match from the same browser version.");return}p2pPeerReady=true;setP2PStatus(`Direct connection ready. You are ${sideName(p2pLocalSide)}.`);model.setMessage(`P2P connected. ${sideName(model.turn)} to move.`);syncUI();return}
+  if(!p2pPeerReady){failP2P("The peer sent a game action before protocol setup completed.");return}
+  if(transitionActive()){pendingPeerMessages.push(message);return}
+  applyPeerMessage(message);
+}
+function applyPeerMessage(message){
+  const remoteSide=p2pLocalSide===Side.WHITE?Side.BLACK:Side.WHITE;
+  if(message.sequence!==p2pSequence+1){failP2P("Move order no longer matches. Leave and start a new match.");return false}
+  if(message.type==="move"){
+    if(message.turn!==model.turn||model.turn!==remoteSide||!Object.values(Plane).includes(message.plane)||!Number.isInteger(message.pieceId)||!message.target||![message.target.x,message.target.y,message.target.z].every(Number.isInteger)){failP2P("The peer move did not match this board. Leave and start a new match.");return false}
+    const moving=model.pieces.find(piece=>piece.id===message.pieceId);if(!moving||moving.side!==remoteSide){failP2P("The peer tried to move the wrong side. Leave and start a new match.");return false}
+    const beforeSolids=model.solids.slice(),beforeMines=model.mines.slice(),beforeClues=new Set(model.revealedClues),beforePieces=clonePieces(model.pieces),from={...moving.position};model.setPlane(message.plane);model.select(message.pieceId);
+    if(!model.tryMove(message.target)){failP2P("The peer sent a move that is not legal on this board.");return false}
+    p2pSequence=message.sequence;positionVersion++;startTransition(moving.id,from,beforeSolids,beforeMines,beforeClues,beforePieces);syncUI();return true;
+  }
+  if(message.type==="promote"){
+    if(model.turn!==remoteSide||model.pendingPromotionPieceId==null||!model.promote(message.kind)){failP2P("The peer sent an invalid promotion.");return false}
+    p2pSequence=message.sequence;positionVersion++;syncUI();return true;
+  }
+  failP2P("The peer sent an unsupported game action.");return false;
+}
+function drainPeerMessages(){if(transitionActive()||!p2pConnected)return;while(pendingPeerMessages.length&&!transitionActive()){const message=pendingPeerMessages.shift();if(!applyPeerMessage(message))return}}
+function failP2P(message){setP2PStatus(message,true);model.setMessage(message);p2pConnected=false;p2pPeerReady=false;pendingPeerMessages=[];peerSession.close();syncUI()}
+function closeP2PDialog(){if(p2pConnected){ui.multiplayer.close();return}cancelP2PSetup()}
 function queueBot(){
   if(!isBotTurn()||model.winner||model.pendingPromotionPieceId!=null||transitionActive())return;const version=++positionVersion;ui.thinking.hidden=false;syncUI();
   botTimer=setTimeout(()=>{if(version!==positionVersion||!isBotTurn())return;prepareBotTurn(model);syncUI();const state=model.cloneForBotSearch();botWorker.postMessage({version,state:{solids:[...state.solids],revealedClues:[...state.revealedClues],scanObservations:state.scanObservations,botSafeMarks:[...state.botSafeMarks],botMineFlags:[...state.botMineFlags],cavernProtected:[...state.cavernProtected],disturbedTerrain:[...state.disturbedTerrain],minesweeperEnabled:state.minesweeperEnabled,pieces:state.pieces,turn:state.turn,plane:state.plane,winner:state.winner,message:state.message,selectedId:state.selectedId,enPassantPawnId:state.enPassantPawnId,enPassantTarget:state.enPassantTarget,pendingPromotionPieceId:state.pendingPromotionPieceId,nextId:state.nextId}})},460);
 }
 function executeMove(target){
-  const moving=model.selected;if(!moving)return;const beforeSolids=model.solids.slice(),beforeMines=model.mines.slice(),beforeClues=new Set(model.revealedClues),beforePieces=clonePieces(model.pieces),from={...moving.position};
-  if(model.tryMove(target)){positionVersion++;pendingBot=model.pendingPromotionPieceId==null&&isBotTurn();startTransition(moving.id,from,beforeSolids,beforeMines,beforeClues,beforePieces)}syncUI();
+  const moving=model.selected;if(!moving)return;const action={type:"move",turn:model.turn,plane:model.plane,pieceId:moving.id,target:{...target}},beforeSolids=model.solids.slice(),beforeMines=model.mines.slice(),beforeClues=new Set(model.revealedClues),beforePieces=clonePieces(model.pieces),from={...moving.position};
+  if(model.tryMove(target)){positionVersion++;pendingBot=model.pendingPromotionPieceId==null&&isBotTurn();startTransition(moving.id,from,beforeSolids,beforeMines,beforeClues,beforePieces);if(matchMode===MatchMode.P2P)sendP2PAction(action)}syncUI();
 }
 function hitAt(point){
   if(!isHumanTurn()||model.winner||model.pendingPromotionPieceId!=null||transitionActive())return;
@@ -118,9 +180,13 @@ ui.mode.addEventListener("change",()=>setMatchMode(ui.mode.value));
 ui.mine.addEventListener("change",()=>{model.minesweeperEnabled=ui.mine.checked;reset()});
 ui.botMarks.addEventListener("change",()=>{dirty=true});
 ui.scoutButton.addEventListener("click",()=>{if(!isHumanTurn()||transitionActive()||model.scout(ui.scoutPattern.value)==null)return;positionVersion++;syncUI()});
-for(const button of document.querySelectorAll("[data-kind]"))button.addEventListener("click",()=>{if(model.promote(button.dataset.kind)){ui.promotion.close();positionVersion++;pendingBot=false;syncUI();if(isBotTurn())queueBot()}});
+for(const button of document.querySelectorAll("[data-kind]"))button.addEventListener("click",()=>{const promotion={type:"promote",kind:button.dataset.kind};if(model.promote(button.dataset.kind)){ui.promotion.close();positionVersion++;pendingBot=false;if(matchMode===MatchMode.P2P)sendP2PAction(promotion);syncUI();if(isBotTurn())queueBot()}});
+ui.hostButton.addEventListener("click",hostP2P);ui.joinButton.addEventListener("click",chooseJoinP2P);ui.createResponse.addEventListener("click",createP2PResponse);ui.acceptResponse.addEventListener("click",acceptP2PResponse);
+ui.copyInvite.addEventListener("click",()=>copyPeerCode(ui.inviteCode,ui.copyInvite,"COPY INVITE"));ui.copyResponse.addEventListener("click",()=>copyPeerCode(ui.responseCode,ui.copyResponse,"COPY RESPONSE"));
+ui.networkLeave.addEventListener("click",reset);ui.multiplayerClose.addEventListener("click",closeP2PDialog);ui.multiplayerReturn.addEventListener("click",()=>ui.multiplayer.close());
+ui.multiplayer.addEventListener("cancel",event=>{if(!p2pConnected){event.preventDefault();cancelP2PSetup()}});
 window.addEventListener("keydown",e=>{
-  if(ui.help.open){if(["h","Escape"].includes(e.key))ui.help.close();return}const key=e.key.toLowerCase();if(ui.promotion.open){const promotion={q:Kind.QUEEN,r:Kind.ROOK,b:Kind.BISHOP,n:Kind.KNIGHT,t:Kind.TRISHOP}[key];if(promotion)document.querySelector(`[data-kind="${promotion}"]`).click();return}
+  if(ui.help.open){if(["h","Escape"].includes(e.key))ui.help.close();return}if(ui.multiplayer.open)return;const key=e.key.toLowerCase();if(ui.promotion.open){const promotion={q:Kind.QUEEN,r:Kind.ROOK,b:Kind.BISHOP,n:Kind.KNIGHT,t:Kind.TRISHOP}[key];if(promotion)document.querySelector(`[data-kind="${promotion}"]`).click();return}
   if(["1","2","3"," ","tab","q","e","u","r","h","m","arrowup","arrowdown"].includes(key))e.preventDefault();
   if(key==="1")setPlane(Plane.XY);else if(key==="2")setPlane(Plane.XZ);else if(key==="3")setPlane(Plane.YZ);else if(key===" "){const p=[Plane.XY,Plane.XZ,Plane.YZ];setPlane(p[(p.indexOf(model.plane)+1)%3])}else if(key==="tab")cyclePiece(e.shiftKey);else if(key==="u")undo();else if(key==="r")reset();else if(key==="h")ui.help.showModal();else if(key==="m")toggleLayer();else if(key==="q"||key==="e"){renderer.yaw+=(key==="e"?1:-1)*Math.PI/2;renderer.updateCamera();syncUI()}else if(key==="arrowup"||key==="arrowdown"){renderer.heightOffset=Math.max(-7,Math.min(7,renderer.heightOffset+(key==="arrowdown"?1:-1)));renderer.updateCamera();syncUI()}else if(key==="escape"){model.clearSelection();syncUI()}
 });
