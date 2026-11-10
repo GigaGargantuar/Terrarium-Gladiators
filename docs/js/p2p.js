@@ -92,11 +92,14 @@ export class PeerSession {
     });
     channel.addEventListener("message", event => {
       if (generation !== this.generation) return;
+      let message;
       try {
-        this.onMessage?.(JSON.parse(event.data));
+        message = JSON.parse(event.data);
       } catch {
         this.onState?.("invalid-message");
+        return;
       }
+      this.onMessage?.(message);
     });
   }
 

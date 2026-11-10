@@ -118,14 +118,14 @@ function sendP2PAction(action){if(!p2pConnected||!p2pPeerReady)return false;cons
 function handlePeerState(state){
   if(state==="connected"){p2pConnected=true;p2pPeerReady=false;setP2PStatus("Direct link established. Checking game version…");peerSession.send({type:"hello",protocol:1,side:p2pLocalSide});syncUI();return}
   if(state==="connecting"){setP2PStatus("Waiting for the direct connection…");return}
-  if(state==="disconnected"){if(matchMode!==MatchMode.P2P)return;p2pConnected=false;p2pPeerReady=false;pendingPeerMessages=[];setP2PStatus("Connection lost. Leave the match to return to local play.",true);model.setMessage("The P2P connection ended.");syncUI();return}
+  if(state==="disconnected"){if(matchMode!==MatchMode.P2P)return;p2pConnected=false;p2pPeerReady=false;pendingPeerMessages=[];setP2PStatus("Connection lost. Leave the match to return to local play.",true);model.message="The P2P connection ended.";syncUI();return}
   if(state==="invalid-message")failP2P("The peer sent an invalid message. Leave the match to reset.");
 }
 function handlePeerMessage(message){
   if(!message||typeof message!=="object")return;
-  if(message.type==="leave"){p2pConnected=false;p2pPeerReady=false;pendingPeerMessages=[];peerSession.close();setP2PStatus("Your opponent left the match.",true);model.setMessage("Your opponent left the P2P match.");syncUI();return}
+  if(message.type==="leave"){p2pConnected=false;p2pPeerReady=false;pendingPeerMessages=[];peerSession.close();setP2PStatus("Your opponent left the match.",true);model.message="Your opponent left the P2P match.";syncUI();return}
   if(matchMode!==MatchMode.P2P||!p2pConnected)return;
-  if(message.type==="hello"){const remoteSide=p2pLocalSide===Side.WHITE?Side.BLACK:Side.WHITE;if(message.protocol!==1||message.side!==remoteSide){failP2P("The peer is using a different game protocol. Start a new match from the same browser version.");return}p2pPeerReady=true;setP2PStatus(`Direct connection ready. You are ${sideName(p2pLocalSide)}.`);model.setMessage(`P2P connected. ${sideName(model.turn)} to move.`);syncUI();return}
+  if(message.type==="hello"){const remoteSide=p2pLocalSide===Side.WHITE?Side.BLACK:Side.WHITE;if(message.protocol!==1||message.side!==remoteSide){failP2P("The peer is using a different game protocol. Start a new match from the same browser version.");return}p2pPeerReady=true;setP2PStatus(`Direct connection ready. You are ${sideName(p2pLocalSide)}.`);model.message=`P2P connected. ${sideName(model.turn)} to move.`;syncUI();return}
   if(!p2pPeerReady){failP2P("The peer sent a game action before protocol setup completed.");return}
   if(transitionActive()){pendingPeerMessages.push(message);return}
   applyPeerMessage(message);
@@ -147,7 +147,7 @@ function applyPeerMessage(message){
   failP2P("The peer sent an unsupported game action.");return false;
 }
 function drainPeerMessages(){if(transitionActive()||!p2pConnected)return;while(pendingPeerMessages.length&&!transitionActive()){const message=pendingPeerMessages.shift();if(!applyPeerMessage(message))return}}
-function failP2P(message){setP2PStatus(message,true);model.setMessage(message);p2pConnected=false;p2pPeerReady=false;pendingPeerMessages=[];peerSession.close();syncUI()}
+function failP2P(message){setP2PStatus(message,true);model.message=message;p2pConnected=false;p2pPeerReady=false;pendingPeerMessages=[];peerSession.close();syncUI()}
 function closeP2PDialog(){if(p2pConnected){ui.multiplayer.close();return}cancelP2PSetup()}
 function queueBot(){
   if(!isBotTurn()||model.winner||model.pendingPromotionPieceId!=null||transitionActive())return;const version=++positionVersion;ui.thinking.hidden=false;syncUI();
